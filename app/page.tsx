@@ -1,64 +1,318 @@
-import Image from "next/image";
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Header } from "./components/Header";
+import { Tabs, type TabKey } from "./components/Tabs";
+import { ProductTypeSelector } from "./components/ProductTypeSelector";
+import { Dropzone } from "./components/Dropzone";
+import { ProductList } from "./components/ProductList";
+import {
+  ActionPanel,
+  type ActionKey,
+  type ActionStatus,
+} from "./components/ActionPanel";
+import { CompletedProductsView } from "./components/CompletedProductsView";
+import {
+  PRODUCT_TYPE_META,
+  type ActionStepKey,
+  type Product,
+  type ProductType,
+  type UploadedImage,
+  type WorkspaceSummary,
+} from "./lib/types";
+import { readImage } from "./lib/image";
+import {
+  deleteWorkspace,
+  listWorkspaces,
+  openFolder,
+  runUpscaleRerun,
+  runUpscaleUpload,
+} from "./lib/client/api";
+
+const INITIAL_STATUSES: Record<ActionKey, ActionStatus> = {
+  upscale: "idle",
+  export: "idle",
+  mockup: "idle",
+  video: "idle",
+};
+
+interface RunningState {
+  workspaceId: string;
+  productId: string;
+  step: ActionStepKey;
+}
 
 export default function Home() {
+  const [tab, setTab] = useState<TabKey>("new");
+
+  // Yeni Ürün sekmesi state'i
+  const [productType, setProductType] = useState<ProductType>("single");
+  const [pool, setPool] = useState<UploadedImage[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [upscaledUrls, setUpscaledUrls] = useState<Record<string, string>>({});
+  const [actionStatuses, setActionStatuses] =
+    useState<Record<ActionKey, ActionStatus>>(INITIAL_STATUSES);
+  const [actionError, setActionError] = useState<{
+    action: ActionKey;
+    message: string;
+  } | null>(null);
+
+  // Tamamlanan Ürünler sekmesi state'i
+  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
+  const [wsLoading, setWsLoading] = useState(false);
+  const [wsError, setWsError] = useState<string | null>(null);
+  const [running, setRunning] = useState<RunningState | null>(null);
+
+  const products = useMemo<Product[]>(() => {
+    const perProduct = PRODUCT_TYPE_META[productType].imagesPerProduct;
+    const out: Product[] = [];
+    for (let i = 0; i < pool.length; i += perProduct) {
+      const slice = pool.slice(i, i + perProduct);
+      out.push({
+        id: `product-${slice[0].id}`,
+        type: productType,
+        images: slice,
+      });
+    }
+    return out;
+  }, [pool, productType]);
+
+  const incompleteCount = useMemo(() => {
+    const perProduct = PRODUCT_TYPE_META[productType].imagesPerProduct;
+    const last = products[products.length - 1];
+    if (!last) return 0;
+    return last.images.length < perProduct
+      ? perProduct - last.images.length
+      : 0;
+  }, [products, productType]);
+
+  const completeProducts = useMemo(() => {
+    const perProduct = PRODUCT_TYPE_META[productType].imagesPerProduct;
+    return products.filter((p) => p.images.length === perProduct);
+  }, [products, productType]);
+
+  const totalCompletedProducts = useMemo(
+    () => workspaces.reduce((sum, w) => sum + w.meta.products.length, 0),
+    [workspaces]
+  );
+
+  const refreshWorkspaces = useCallback(async () => {
+    setWsLoading(true);
+    setWsError(null);
+    try {
+      const list = await listWorkspaces();
+      setWorkspaces(list);
+    } catch (err) {
+      setWsError(err instanceof Error ? err.message : "Bilinmeyen hata");
+    } finally {
+      setWsLoading(false);
+    }
+  }, []);
+
+  // İlk yüklemede liste çek (data fetching effect)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await Promise.resolve();
+      if (!cancelled) await refreshWorkspaces();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshWorkspaces]);
+
+  const handleFiles = useCallback(async (files: File[]) => {
+    setIsProcessing(true);
+    try {
+      const loaded = await Promise.all(files.map(readImage));
+      setPool((prev) => [...prev, ...loaded]);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, []);
+
+  const handleRemoveProduct = useCallback(
+    (productId: string) => {
+      const product = products.find((p) => p.id === productId);
+      if (!product) return;
+      const idsToRemove = new Set(product.images.map((img) => img.id));
+      product.images.forEach((img) => URL.revokeObjectURL(img.url));
+      setPool((prev) => prev.filter((img) => !idsToRemove.has(img.id)));
+      setUpscaledUrls((prev) => {
+        const next = { ...prev };
+        for (const id of idsToRemove) delete next[id];
+        return next;
+      });
+    },
+    [products]
+  );
+
+  const handleClearAll = useCallback(() => {
+    pool.forEach((img) => URL.revokeObjectURL(img.url));
+    setPool([]);
+    setActionStatuses(INITIAL_STATUSES);
+    setUpscaledUrls({});
+    setWorkspaceId(null);
+    setActionError(null);
+  }, [pool]);
+
+  const performUpscale = useCallback(async () => {
+    if (completeProducts.length === 0) return;
+    setActionError(null);
+    setActionStatuses((s) => ({ ...s, upscale: "running" }));
+    try {
+      const result = await runUpscaleUpload(completeProducts, workspaceId);
+      setWorkspaceId(result.workspaceId);
+      setUpscaledUrls((prev) => {
+        const next = { ...prev };
+        for (const product of result.products) {
+          const local = completeProducts.find((p) => p.id === product.productId);
+          if (!local) continue;
+          for (const img of product.images) {
+            const localImg = local.images[img.index];
+            if (localImg) next[localImg.id] = img.upscaledUrl;
+          }
+        }
+        return next;
+      });
+      setActionStatuses((s) => ({ ...s, upscale: "done" }));
+      // Listeyi sessizce güncelle ki "Tamamlanan" sekmesinde gözüksün
+      void refreshWorkspaces();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Bilinmeyen hata";
+      setActionStatuses((s) => ({ ...s, upscale: "error" }));
+      setActionError({ action: "upscale", message });
+    }
+  }, [completeProducts, workspaceId, refreshWorkspaces]);
+
+  const handleRunAction = useCallback(
+    (action: ActionKey) => {
+      if (action === "upscale") {
+        void performUpscale();
+        return;
+      }
+      console.log("Run action (not implemented):", action);
+    },
+    [performUpscale]
+  );
+
+  const handleRunAll = useCallback(() => {
+    void performUpscale();
+  }, [performUpscale]);
+
+  const handleRerunStep = useCallback(
+    async (wsId: string, productId: string, step: ActionStepKey) => {
+      if (running) return;
+      setRunning({ workspaceId: wsId, productId, step });
+      setWsError(null);
+      try {
+        if (step === "upscale") {
+          await runUpscaleRerun(wsId, [productId]);
+        } else {
+          throw new Error(`${step} adımı henüz uygulanmadı`);
+        }
+        await refreshWorkspaces();
+      } catch (err) {
+        setWsError(err instanceof Error ? err.message : "Bilinmeyen hata");
+      } finally {
+        setRunning(null);
+      }
+    },
+    [running, refreshWorkspaces]
+  );
+
+  const handleOpenFolder = useCallback(
+    async (wsId: string, productId?: string) => {
+      setWsError(null);
+      try {
+        await openFolder(wsId, productId);
+      } catch (err) {
+        setWsError(err instanceof Error ? err.message : "Klasör açılamadı");
+      }
+    },
+    []
+  );
+
+  const handleDeleteWorkspace = useCallback(
+    async (wsId: string) => {
+      if (running) return;
+      setWsError(null);
+      try {
+        await deleteWorkspace(wsId);
+        await refreshWorkspaces();
+      } catch (err) {
+        setWsError(err instanceof Error ? err.message : "Silinemedi");
+      }
+    },
+    [running, refreshWorkspaces]
+  );
+
+  const ready = completeProducts.length > 0;
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+    <div className="min-h-screen">
+      <Header />
+      <Tabs
+        active={tab}
+        completedCount={totalCompletedProducts}
+        onChange={setTab}
+      />
+
+      <main className="max-w-5xl mx-auto px-6 pb-24 pt-8">
+        {tab === "new" ? (
+          <>
+            <ProductTypeSelector
+              value={productType}
+              onChange={setProductType}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+            <Dropzone productType={productType} onFiles={handleFiles} />
+
+            {isProcessing && (
+              <div className="mt-3 text-xs text-slate-500 text-center">
+                Görseller işleniyor…
+              </div>
+            )}
+
+            <ProductList
+              products={products}
+              incompleteCount={incompleteCount}
+              upscaledUrls={upscaledUrls}
+              onRemoveProduct={handleRemoveProduct}
+              onClearAll={handleClearAll}
+            />
+
+            <ActionPanel
+              ready={ready}
+              productCount={completeProducts.length}
+              statuses={actionStatuses}
+              onRun={handleRunAction}
+              onRunAll={handleRunAll}
+            />
+
+            {actionError && (
+              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                <div className="font-semibold capitalize">
+                  {actionError.action} hatası
+                </div>
+                <div className="text-red-700 mt-0.5">{actionError.message}</div>
+              </div>
+            )}
+          </>
+        ) : (
+          <CompletedProductsView
+            workspaces={workspaces}
+            loading={wsLoading}
+            running={running}
+            error={wsError}
+            onRefresh={refreshWorkspaces}
+            onDeleteWorkspace={handleDeleteWorkspace}
+            onRunStep={handleRerunStep}
+            onOpenFolder={handleOpenFolder}
+          />
+        )}
       </main>
     </div>
   );
