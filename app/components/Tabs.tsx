@@ -1,14 +1,15 @@
 "use client";
 
-export type TabKey = "new" | "completed";
+export type TabKey = "new" | "completed" | "templates";
 
 interface Props {
   active: TabKey;
   completedCount: number;
+  templateCount: number;
   onChange: (tab: TabKey) => void;
 }
 
-export function Tabs({ active, completedCount, onChange }: Props) {
+export function Tabs({ active, completedCount, templateCount, onChange }: Props) {
   return (
     <div className="border-b border-slate-200 bg-white">
       <div className="max-w-5xl mx-auto px-6 flex gap-1">
@@ -48,6 +49,28 @@ export function Tabs({ active, completedCount, onChange }: Props) {
             >
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
               <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+          }
+        />
+        <TabButton
+          active={active === "templates"}
+          onClick={() => onChange("templates")}
+          label="Şablonlar"
+          badge={templateCount}
+          icon={
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="w-4 h-4"
+            >
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
             </svg>
           }
         />

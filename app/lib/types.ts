@@ -81,3 +81,30 @@ export interface WorkspaceSummary {
   meta: WorkspaceMeta;
   status: ProductStatus[];
 }
+
+export interface SmartObjectInfo {
+  name: string;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+export interface MockupTemplate {
+  id: string;
+  name: string;
+  psdPath: string;
+  previewPath: string | null;
+  smartObjects: SmartObjectInfo[];
+  scannedAt: string;
+}
+
+export interface OrientationTemplates {
+  sourceFolder: string;
+  lastScannedAt: string;
+  templates: MockupTemplate[];
+}
+
+export type MockupTemplatesIndex = Partial<
+  Record<Orientation, OrientationTemplates>
+>;

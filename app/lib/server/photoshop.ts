@@ -34,26 +34,31 @@ export async function validatePhotoshopApp(appName: string): Promise<void> {
   }
 }
 
-export interface RunActionParams {
-  inputPath: string;
-  outputPath: string;
-  actionSet: string;
-  actionName: string;
+/**
+ * Generic Photoshop JSX runner. Caller provides the JSX body (without
+ * #target/marker boilerplate) — this function wraps it with try/catch that
+ * writes done/error markers and handles app invocation + polling + cleanup.
+ */
+export async function runPhotoshopJsx({
+  jsxBody,
+  jsxPath,
+  donePath,
+  errorPath,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+}: {
+  jsxBody: string;
+  jsxPath: string;
   donePath: string;
   errorPath: string;
-  jsxPath: string;
-}
-
-export async function runPhotoshopAction(params: RunActionParams): Promise<void> {
-  const { jsxPath, donePath, errorPath } = params;
+  timeoutMs?: number;
+}): Promise<string> {
   const config = getPhotoshopConfig();
-
-  const jsx = buildActionJsx(params);
+  const jsx = wrapJsx({ body: jsxBody, errorPath });
 
   try {
     await fs.writeFile(jsxPath, jsx, "utf8");
     await invokePhotoshop(config.appName, jsxPath);
-    await waitForCompletion({ donePath, errorPath });
+    return await waitForCompletion({ donePath, errorPath, timeoutMs });
   } finally {
     await Promise.allSettled([
       fs.rm(jsxPath, { force: true }),
@@ -63,14 +68,113 @@ export async function runPhotoshopAction(params: RunActionParams): Promise<void>
   }
 }
 
-function buildActionJsx({
-  inputPath,
-  outputPath,
-  actionSet,
-  actionName,
-  donePath,
+/**
+ * Runs a named Photoshop action recorded in the configured action set.
+ * Used by the Upscale step where the user records their own Action.
+ */
+export async function runPhotoshopAction(params: {
+  inputPath: string;
+  outputPath: string;
+  actionName: string;
+  jsxPath: string;
+  donePath: string;
+  errorPath: string;
+}): Promise<void> {
+  const config = getPhotoshopConfig();
+  const body = `
+var inputFile = new File(${jsxString(params.inputPath)});
+var outputFile = new File(${jsxString(params.outputPath)});
+app.open(inputFile);
+app.doAction(${jsxString(params.actionName)}, ${jsxString(config.actionSet)});
+
+var jpgOptions = new JPEGSaveOptions();
+jpgOptions.quality = 12;
+jpgOptions.embedColorProfile = true;
+jpgOptions.formatOptions = FormatOptions.STANDARDBASELINE;
+jpgOptions.matte = MatteType.NONE;
+
+app.activeDocument.saveAs(outputFile, jpgOptions, true, Extension.LOWERCASE);
+app.activeDocument.close(SaveOptions.DONOTSAVECHANGES);
+writeMarker(${jsxString(params.donePath)}, "done");
+`;
+
+  await runPhotoshopJsx({
+    jsxBody: body,
+    jsxPath: params.jsxPath,
+    donePath: params.donePath,
+    errorPath: params.errorPath,
+  });
+}
+
+/**
+ * Stretches the source image to the target dimensions using Photoshop's
+ * Bicubic Smoother resample (best for upscale/print), then applies Smart
+ * Sharpen with print-tuned parameters, and saves as JPEG quality 12.
+ */
+export async function runPhotoshopResize(params: {
+  inputPath: string;
+  outputPath: string;
+  targetWidth: number;
+  targetHeight: number;
+  jsxPath: string;
+  donePath: string;
+  errorPath: string;
+}): Promise<void> {
+  const body = `
+var inputFile = new File(${jsxString(params.inputPath)});
+var outputFile = new File(${jsxString(params.outputPath)});
+var doc = app.open(inputFile);
+
+doc.resizeImage(
+  UnitValue(${params.targetWidth}, "px"),
+  UnitValue(${params.targetHeight}, "px"),
+  300,
+  ResampleMethod.BICUBICSMOOTHER
+);
+
+var sharpenDesc = new ActionDescriptor();
+sharpenDesc.putUnitDouble(stringIDToTypeID("amount"), charIDToTypeID("#Prc"), 65);
+sharpenDesc.putUnitDouble(stringIDToTypeID("radius"), charIDToTypeID("#Pxl"), 0.8);
+sharpenDesc.putUnitDouble(stringIDToTypeID("noiseReduction"), charIDToTypeID("#Prc"), 10);
+sharpenDesc.putEnumerated(stringIDToTypeID("blur"), stringIDToTypeID("blurType"), stringIDToTypeID("lensBlur"));
+executeAction(stringIDToTypeID("smartSharpen"), sharpenDesc, DialogModes.NO);
+
+var jpgOptions = new JPEGSaveOptions();
+jpgOptions.quality = 12;
+jpgOptions.embedColorProfile = true;
+jpgOptions.formatOptions = FormatOptions.STANDARDBASELINE;
+jpgOptions.matte = MatteType.NONE;
+
+doc.saveAs(outputFile, jpgOptions, true, Extension.LOWERCASE);
+doc.close(SaveOptions.DONOTSAVECHANGES);
+writeMarker(${jsxString(params.donePath)}, "done");
+`;
+
+  await runPhotoshopJsx({
+    jsxBody: body,
+    jsxPath: params.jsxPath,
+    donePath: params.donePath,
+    errorPath: params.errorPath,
+  });
+}
+
+/**
+ * Exposes `jsxString` so other modules can build their own JSX bodies that
+ * write data back via `writeMarker(donePath, JSON.stringify(...))`.
+ */
+export function jsxStr(value: string): string {
+  return jsxString(value);
+}
+
+function wrapJsx({
+  body,
   errorPath,
-}: Omit<RunActionParams, "jsxPath">): string {
+}: {
+  body: string;
+  errorPath: string;
+}): string {
+  // The body is responsible for calling writeMarker(donePath, "...") on success.
+  // The wrapper only handles boilerplate and error capture.
   return `
 #target photoshop
 app.displayDialogs = DialogModes.NO;
@@ -84,23 +188,10 @@ function writeMarker(filePath, message) {
 }
 
 try {
-  var inputFile = new File(${jsxString(inputPath)});
-  var outputFile = new File(${jsxString(outputPath)});
-  var doc = app.open(inputFile);
-  app.doAction(${jsxString(actionName)}, ${jsxString(actionSet)});
-
-  var jpgOptions = new JPEGSaveOptions();
-  jpgOptions.quality = 12;
-  jpgOptions.embedColorProfile = true;
-  jpgOptions.formatOptions = FormatOptions.STANDARDBASELINE;
-  jpgOptions.matte = MatteType.NONE;
-
-  app.activeDocument.saveAs(outputFile, jpgOptions, true, Extension.LOWERCASE);
-  app.activeDocument.close(SaveOptions.DONOTSAVECHANGES);
-  writeMarker(${jsxString(donePath)}, "done");
+${body}
 } catch (error) {
   try {
-    if (app.documents.length > 0) {
+    while (app.documents.length > 0) {
       app.activeDocument.close(SaveOptions.DONOTSAVECHANGES);
     }
   } catch (closeError) {}
@@ -125,12 +216,12 @@ async function invokePhotoshop(appName: string, jsxPath: string): Promise<void> 
 async function waitForCompletion({
   donePath,
   errorPath,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
+  timeoutMs,
 }: {
   donePath: string;
   errorPath: string;
-  timeoutMs?: number;
-}): Promise<void> {
+  timeoutMs: number;
+}): Promise<string> {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < timeoutMs) {
@@ -142,13 +233,13 @@ async function waitForCompletion({
     }
 
     const done = await readFileIfExists(donePath);
-    if (done != null) return;
+    if (done != null) return done;
 
     await sleep(POLL_INTERVAL_MS);
   }
 
   throw new Error(
-    `Photoshop action 10 dakika içinde tamamlanamadı (timeout).`
+    `Photoshop action ${Math.round(timeoutMs / 60000)} dakika içinde tamamlanamadı (timeout).`
   );
 }
 

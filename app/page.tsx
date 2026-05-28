@@ -12,21 +12,33 @@ import {
   type ActionStatus,
 } from "./components/ActionPanel";
 import { CompletedProductsView } from "./components/CompletedProductsView";
+import { TemplatesView } from "./components/TemplatesView";
+import { MockupSelectionModal } from "./components/MockupSelectionModal";
 import {
   PRODUCT_TYPE_META,
   type ActionStepKey,
+  type MockupTemplatesIndex,
+  type Orientation,
   type Product,
+  type ProductMeta,
   type ProductType,
   type UploadedImage,
   type WorkspaceSummary,
 } from "./lib/types";
 import { readImage } from "./lib/image";
 import {
+  clearMockupOrientation,
   deleteWorkspace,
+  listMockupTemplates,
   listWorkspaces,
   openFolder,
+  pickMockupFolder,
+  runExport,
+  runMockup,
   runUpscaleRerun,
   runUpscaleUpload,
+  runVideo,
+  scanMockupFolder,
 } from "./lib/client/api";
 
 const INITIAL_STATUSES: Record<ActionKey, ActionStatus> = {
@@ -64,6 +76,26 @@ export default function Home() {
   const [wsError, setWsError] = useState<string | null>(null);
   const [running, setRunning] = useState<RunningState | null>(null);
 
+  // Şablonlar sekmesi state'i
+  const [templatesIndex, setTemplatesIndex] = useState<MockupTemplatesIndex>({});
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
+  const [scanningOrientation, setScanningOrientation] =
+    useState<Orientation | null>(null);
+
+  // Mockup seçim modal state'i
+  const [mockupModalTarget, setMockupModalTarget] = useState<{
+    workspaceId: string;
+    product: ProductMeta;
+  } | null>(null);
+  const [mockupRendering, setMockupRendering] = useState(false);
+  const [mockupRenderProgress, setMockupRenderProgress] = useState<{
+    current: number;
+    total: number;
+    name: string;
+  } | null>(null);
+  const [mockupError, setMockupError] = useState<string | null>(null);
+
   const products = useMemo<Product[]>(() => {
     const perProduct = PRODUCT_TYPE_META[productType].imagesPerProduct;
     const out: Product[] = [];
@@ -97,6 +129,67 @@ export default function Home() {
     [workspaces]
   );
 
+  const totalTemplates = useMemo(() => {
+    let total = 0;
+    for (const o of ["vertical", "horizontal", "square"] as Orientation[]) {
+      total += templatesIndex[o]?.templates.length ?? 0;
+    }
+    return total;
+  }, [templatesIndex]);
+
+  const refreshTemplates = useCallback(async () => {
+    setTemplatesLoading(true);
+    setTemplatesError(null);
+    try {
+      const idx = await listMockupTemplates();
+      setTemplatesIndex(idx);
+    } catch (err) {
+      setTemplatesError(
+        err instanceof Error ? err.message : "Bilinmeyen hata"
+      );
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }, []);
+
+  const handlePickAndScan = useCallback(
+    async (orientation: Orientation) => {
+      if (scanningOrientation) return;
+      setTemplatesError(null);
+      try {
+        const folder = await pickMockupFolder(
+          `"${orientation}" için mockup klasörünü seç`
+        );
+        if (!folder) return;
+        setScanningOrientation(orientation);
+        await scanMockupFolder(orientation, folder);
+        await refreshTemplates();
+      } catch (err) {
+        setTemplatesError(
+          err instanceof Error ? err.message : "Tarama başarısız"
+        );
+      } finally {
+        setScanningOrientation(null);
+      }
+    },
+    [scanningOrientation, refreshTemplates]
+  );
+
+  const handleClearOrientation = useCallback(
+    async (orientation: Orientation) => {
+      setTemplatesError(null);
+      try {
+        await clearMockupOrientation(orientation);
+        await refreshTemplates();
+      } catch (err) {
+        setTemplatesError(
+          err instanceof Error ? err.message : "Silme başarısız"
+        );
+      }
+    },
+    [refreshTemplates]
+  );
+
   const refreshWorkspaces = useCallback(async () => {
     setWsLoading(true);
     setWsError(null);
@@ -115,12 +208,13 @@ export default function Home() {
     let cancelled = false;
     (async () => {
       await Promise.resolve();
-      if (!cancelled) await refreshWorkspaces();
+      if (cancelled) return;
+      await Promise.all([refreshWorkspaces(), refreshTemplates()]);
     })();
     return () => {
       cancelled = true;
     };
-  }, [refreshWorkspaces]);
+  }, [refreshWorkspaces, refreshTemplates]);
 
   const handleFiles = useCallback(async (files: File[]) => {
     setIsProcessing(true);
@@ -159,8 +253,74 @@ export default function Home() {
     setActionError(null);
   }, [pool]);
 
-  const performUpscale = useCallback(async () => {
-    if (completeProducts.length === 0) return;
+  const performExport = useCallback(
+    async (overrideWorkspaceId?: string): Promise<boolean> => {
+      const targetWs = overrideWorkspaceId ?? workspaceId;
+      if (!targetWs) {
+        setActionError({
+          action: "export",
+          message: "Önce Upscale çalıştırarak workspace oluştur.",
+        });
+        return false;
+      }
+      setActionError(null);
+      setActionStatuses((s) => ({ ...s, export: "running" }));
+      try {
+        await runExport(targetWs);
+        setActionStatuses((s) => ({ ...s, export: "done" }));
+        void refreshWorkspaces();
+        return true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Bilinmeyen hata";
+        setActionStatuses((s) => ({ ...s, export: "error" }));
+        setActionError({ action: "export", message });
+        return false;
+      }
+    },
+    [workspaceId, refreshWorkspaces]
+  );
+
+  const performVideo = useCallback(
+    async (overrideWorkspaceId?: string): Promise<boolean> => {
+      const targetWs = overrideWorkspaceId ?? workspaceId;
+      if (!targetWs) {
+        setActionError({
+          action: "video",
+          message: "Önce Upscale çalıştırarak workspace oluştur.",
+        });
+        return false;
+      }
+      // For each product in the workspace, render its video. The action handles
+      // single-product workspaces; multi-product rendering happens sequentially.
+      const ws = workspaces.find((w) => w.meta.id === targetWs);
+      const productIds =
+        ws?.meta.products.map((p) => p.id) ??
+        completeProducts.map((p) => p.id);
+      if (productIds.length === 0) {
+        setActionError({ action: "video", message: "Ürün bulunamadı." });
+        return false;
+      }
+      setActionError(null);
+      setActionStatuses((s) => ({ ...s, video: "running" }));
+      try {
+        for (const pid of productIds) {
+          await runVideo(targetWs, pid);
+        }
+        setActionStatuses((s) => ({ ...s, video: "done" }));
+        void refreshWorkspaces();
+        return true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Bilinmeyen hata";
+        setActionStatuses((s) => ({ ...s, video: "error" }));
+        setActionError({ action: "video", message });
+        return false;
+      }
+    },
+    [workspaceId, workspaces, completeProducts, refreshWorkspaces]
+  );
+
+  const performUpscale = useCallback(async (): Promise<string | null> => {
+    if (completeProducts.length === 0) return null;
     setActionError(null);
     setActionStatuses((s) => ({ ...s, upscale: "running" }));
     try {
@@ -181,10 +341,12 @@ export default function Home() {
       setActionStatuses((s) => ({ ...s, upscale: "done" }));
       // Listeyi sessizce güncelle ki "Tamamlanan" sekmesinde gözüksün
       void refreshWorkspaces();
+      return result.workspaceId;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Bilinmeyen hata";
       setActionStatuses((s) => ({ ...s, upscale: "error" }));
       setActionError({ action: "upscale", message });
+      return null;
     }
   }, [completeProducts, workspaceId, refreshWorkspaces]);
 
@@ -194,23 +356,54 @@ export default function Home() {
         void performUpscale();
         return;
       }
-      console.log("Run action (not implemented):", action);
+      if (action === "export") {
+        void performExport();
+        return;
+      }
+      if (action === "video") {
+        void performVideo();
+        return;
+      }
+      // mockup requires template selection — handled in Tamamlanan tab
+      console.log("Run action (not implemented from new tab):", action);
     },
-    [performUpscale]
+    [performUpscale, performExport, performVideo]
   );
 
-  const handleRunAll = useCallback(() => {
-    void performUpscale();
-  }, [performUpscale]);
+  const handleRunAll = useCallback(async () => {
+    // Mockup requires user template selection, so Full Otomasyon chains
+    // Upscale → Export → Video and skips Mockup.
+    const wsId = await performUpscale();
+    if (!wsId) return;
+    const exportOk = await performExport(wsId);
+    if (!exportOk) return;
+    await performVideo(wsId);
+  }, [performUpscale, performExport, performVideo]);
 
   const handleRerunStep = useCallback(
     async (wsId: string, productId: string, step: ActionStepKey) => {
       if (running) return;
+      // Mockup adımı modal açar (kullanıcı şablon seçer)
+      if (step === "mockup") {
+        const ws = workspaces.find((w) => w.meta.id === wsId);
+        const product = ws?.meta.products.find((p) => p.id === productId);
+        if (!product) {
+          setWsError("Ürün bulunamadı");
+          return;
+        }
+        setMockupError(null);
+        setMockupModalTarget({ workspaceId: wsId, product });
+        return;
+      }
       setRunning({ workspaceId: wsId, productId, step });
       setWsError(null);
       try {
         if (step === "upscale") {
           await runUpscaleRerun(wsId, [productId]);
+        } else if (step === "export") {
+          await runExport(wsId, [productId]);
+        } else if (step === "video") {
+          await runVideo(wsId, productId);
         } else {
           throw new Error(`${step} adımı henüz uygulanmadı`);
         }
@@ -221,8 +414,51 @@ export default function Home() {
         setRunning(null);
       }
     },
-    [running, refreshWorkspaces]
+    [running, refreshWorkspaces, workspaces]
   );
+
+  const handleMockupRender = useCallback(
+    async (templateIds: string[]) => {
+      if (!mockupModalTarget) return;
+      const { workspaceId: wsId, product } = mockupModalTarget;
+      setMockupError(null);
+      setMockupRendering(true);
+      setMockupRenderProgress({
+        current: 0,
+        total: templateIds.length,
+        name: "başlatılıyor",
+      });
+      try {
+        // Sıralı renderlar için API ayrı çağrı yapıyor — yine de tek istek atalım,
+        // progress için 1/N → N/N göstereceğiz. Daha hassas progress için SSE eklenebilir.
+        setMockupRenderProgress({
+          current: 0,
+          total: templateIds.length,
+          name: "Photoshop render başlıyor",
+        });
+        await runMockup(wsId, product.id, templateIds);
+        setMockupRenderProgress({
+          current: templateIds.length,
+          total: templateIds.length,
+          name: "tamamlandı",
+        });
+        await refreshWorkspaces();
+        setMockupModalTarget(null);
+      } catch (err) {
+        setMockupError(err instanceof Error ? err.message : "Render başarısız");
+      } finally {
+        setMockupRendering(false);
+        setMockupRenderProgress(null);
+      }
+    },
+    [mockupModalTarget, refreshWorkspaces]
+  );
+
+  const handleMockupClose = useCallback(() => {
+    if (mockupRendering) return;
+    setMockupModalTarget(null);
+    setMockupError(null);
+  }, [mockupRendering]);
 
   const handleOpenFolder = useCallback(
     async (wsId: string, productId?: string) => {
@@ -258,11 +494,12 @@ export default function Home() {
       <Tabs
         active={tab}
         completedCount={totalCompletedProducts}
+        templateCount={totalTemplates}
         onChange={setTab}
       />
 
       <main className="max-w-5xl mx-auto px-6 pb-24 pt-8">
-        {tab === "new" ? (
+        {tab === "new" && (
           <>
             <ProductTypeSelector
               value={productType}
@@ -301,7 +538,9 @@ export default function Home() {
               </div>
             )}
           </>
-        ) : (
+        )}
+
+        {tab === "completed" && (
           <CompletedProductsView
             workspaces={workspaces}
             loading={wsLoading}
@@ -313,7 +552,31 @@ export default function Home() {
             onOpenFolder={handleOpenFolder}
           />
         )}
+
+        {tab === "templates" && (
+          <TemplatesView
+            index={templatesIndex}
+            loading={templatesLoading}
+            scanning={scanningOrientation}
+            error={templatesError}
+            onPickAndScan={handlePickAndScan}
+            onClear={handleClearOrientation}
+            onRefresh={refreshTemplates}
+          />
+        )}
       </main>
+
+      {mockupModalTarget && (
+        <MockupSelectionModal
+          product={mockupModalTarget.product}
+          templatesIndex={templatesIndex}
+          rendering={mockupRendering}
+          renderProgress={mockupRenderProgress}
+          error={mockupError}
+          onClose={handleMockupClose}
+          onRender={handleMockupRender}
+        />
+      )}
     </div>
   );
 }

@@ -78,7 +78,6 @@ export async function upscaleWorkspace(
       await runPhotoshopAction({
         inputPath: img.originalPath,
         outputPath,
-        actionSet: config.actionSet,
         actionName,
         donePath,
         errorPath,

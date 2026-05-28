@@ -1,4 +1,10 @@
-import type { Product, WorkspaceSummary } from "../types";
+import type {
+  MockupTemplatesIndex,
+  Orientation,
+  OrientationTemplates,
+  Product,
+  WorkspaceSummary,
+} from "../types";
 
 export interface UpscaleResponse {
   workspaceId: string;
@@ -69,6 +75,30 @@ export async function runUpscaleRerun(
   return res.json();
 }
 
+export interface ExportResponse {
+  workspaceId: string;
+  products: {
+    productId: string;
+    images: { index: number; jpgUrls: string[]; pdfUrl: string }[];
+  }[];
+}
+
+export async function runExport(
+  workspaceId: string,
+  productIds?: string[]
+): Promise<ExportResponse> {
+  const res = await fetch("/api/actions/export", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspaceId, productIds }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || `Export failed (${res.status})`);
+  }
+  return res.json();
+}
+
 export async function listWorkspaces(): Promise<WorkspaceSummary[]> {
   const res = await fetch("/api/workspaces", { cache: "no-store" });
   if (!res.ok) throw new Error("Workspace listesi alınamadı");
@@ -89,6 +119,104 @@ export async function openFolder(
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body.error || `Klasör açılamadı (${res.status})`);
   }
+}
+
+export interface VideoRenderResponse {
+  workspaceId: string;
+  productId: string;
+  url: string;
+}
+
+export async function runVideo(
+  workspaceId: string,
+  productId: string
+): Promise<VideoRenderResponse> {
+  const res = await fetch("/api/actions/video", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspaceId, productId }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || `Video render failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export interface MockupRenderResponse {
+  workspaceId: string;
+  productId: string;
+  mockups: { templateId: string; templateName: string; url: string }[];
+}
+
+export async function runMockup(
+  workspaceId: string,
+  productId: string,
+  templateIds: string[]
+): Promise<MockupRenderResponse> {
+  const res = await fetch("/api/actions/mockup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspaceId, productId, templateIds }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || `Mockup render failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function listMockupTemplates(): Promise<MockupTemplatesIndex> {
+  const res = await fetch("/api/mockup-templates", { cache: "no-store" });
+  if (!res.ok) throw new Error("Şablon listesi alınamadı");
+  return res.json();
+}
+
+export async function pickMockupFolder(prompt?: string): Promise<string | null> {
+  const res = await fetch("/api/mockup-templates/pick-folder", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || "Klasör seçilemedi");
+  }
+  const data = (await res.json()) as { folder: string | null };
+  return data.folder;
+}
+
+export async function scanMockupFolder(
+  orientation: Orientation,
+  folderPath: string
+): Promise<OrientationTemplates> {
+  const res = await fetch("/api/mockup-templates/scan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orientation, folderPath }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || "Tarama başarısız");
+  }
+  const data = (await res.json()) as {
+    orientation: Orientation;
+    block: OrientationTemplates;
+  };
+  return data.block;
+}
+
+export async function clearMockupOrientation(
+  orientation: Orientation
+): Promise<void> {
+  const res = await fetch(`/api/mockup-templates/clear/${orientation}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Silme başarısız");
+}
+
+export function mockupPreviewUrl(templateId: string): string {
+  return `/api/mockup-templates/preview/${templateId}`;
 }
 
 export async function deleteWorkspace(workspaceId: string): Promise<void> {

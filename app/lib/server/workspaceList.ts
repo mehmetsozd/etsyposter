@@ -1,15 +1,12 @@
-import {
-  listFilesInDir,
-  listWorkspaceIds,
-  readWorkspaceMeta,
-} from "./workspace";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { listWorkspaceIds, readWorkspaceMeta } from "./workspace";
 import { productSubdirs, toPublicUrl } from "./paths";
 import type {
   ActionStepKey,
   ProductStatus,
   WorkspaceSummary,
 } from "../types";
-import path from "node:path";
 
 const STEP_DIRS: Record<ActionStepKey, keyof ReturnType<typeof productSubdirs>> = {
   upscale: "upscaled",
@@ -17,6 +14,28 @@ const STEP_DIRS: Record<ActionStepKey, keyof ReturnType<typeof productSubdirs>> 
   mockup: "mockups",
   video: "videos",
 };
+
+async function listFilesRecursive(dir: string): Promise<string[]> {
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const out: string[] = [];
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue;
+    const abs = path.join(dir, entry.name);
+    if (entry.isFile()) {
+      out.push(abs);
+    } else if (entry.isDirectory()) {
+      const nested = await listFilesRecursive(abs);
+      out.push(...nested);
+    }
+  }
+  return out;
+}
 
 async function readStepUrls(
   workspaceId: string,
@@ -26,11 +45,8 @@ async function readStepUrls(
   const dirs = productSubdirs(workspaceId, productId);
   const subdirKey = STEP_DIRS[step];
   const dir = dirs[subdirKey];
-  const files = await listFilesInDir(dir);
-  return files
-    .filter((name) => !name.startsWith("."))
-    .sort()
-    .map((name) => toPublicUrl(path.join(dir, name)));
+  const files = await listFilesRecursive(dir);
+  return files.sort().map((abs) => toPublicUrl(abs));
 }
 
 async function buildProductStatus(

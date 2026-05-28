@@ -277,7 +277,7 @@ function ProductRow({
               running?.step === step;
             const isOtherRunning = running !== null && !isRunning;
             const isDone = status.steps[step]?.done ?? false;
-            const notImplemented = step !== "upscale";
+            const notImplemented = false; // all four steps now implemented
             return (
               <button
                 key={step}

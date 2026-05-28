@@ -37,6 +37,12 @@ yarn-error.log*
 # project workspace (uploaded + generated files)
 /public/workspace/
 
+# mockup templates index (paths to PSDs/PNGs are machine-specific)
+/data/
+
+# video mockup PSDs (paid assets, machine-specific paths)
+/video_mockups/
+
 # vercel
 .vercel
 
