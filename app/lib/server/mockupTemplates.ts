@@ -152,24 +152,30 @@ async function pickFolderMac(prompt: string): Promise<string | null> {
 async function pickFolderWindows(prompt: string): Promise<string | null> {
   // PowerShell's single-quoted string only needs '' for embedded apostrophes.
   const escapedPrompt = prompt.replace(/'/g, "''");
+  // KRİTİK: Çıktıyı UTF-8'e zorla. Default Windows code page (cp1252) Türkçe
+  // karakterleri (İ, ş, ğ, ç, ü, ö) bozar — örn. "NİSA" → "N�SA". Node bunu
+  // okuyup fs.readdir'a verince klasör bulunamaz hatası alırız.
+  // BOM yazmaması için UTF8Encoding'i parametresiz değil $false ile yaratıyoruz.
   const script = `
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+$OutputEncoding = New-Object System.Text.UTF8Encoding $false
 Add-Type -AssemblyName System.Windows.Forms | Out-Null
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
 $dialog.Description = '${escapedPrompt}'
 $dialog.UseDescriptionForTitle = $true
 $dialog.ShowNewFolderButton = $true
 if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-  Write-Output $dialog.SelectedPath
+  [Console]::Out.WriteLine($dialog.SelectedPath)
 }
 `;
   try {
-    const { stdout } = await execFileAsync("powershell.exe", [
-      "-NoProfile",
-      "-STA",
-      "-Command",
-      script,
-    ]);
-    const trimmed = stdout.trim();
+    const { stdout } = await execFileAsync(
+      "powershell.exe",
+      ["-NoProfile", "-STA", "-Command", script],
+      { encoding: "utf8" }
+    );
+    // BOM (U+FEFF) PowerShell sürümüne göre yazılabilir — temizleyelim.
+    const trimmed = stdout.trim().replace(/^﻿/, "");
     return trimmed.length > 0 ? trimmed : null;
   } catch (error) {
     const message =
