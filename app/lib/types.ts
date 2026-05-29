@@ -105,6 +105,29 @@ export interface OrientationTemplates {
   templates: MockupTemplate[];
 }
 
+/**
+ * Şablonlar 5 bucket altında toplanır: 3 orientation (vertical/horizontal/square,
+ * single-frame mockup'lar için) + duo (2 smart object) + trio (3 smart object).
+ * Set'li ürünler için orientation'dan bağımsız kendi bucket'larında durur.
+ */
+export type MockupCategory = Orientation | "duo" | "trio";
+
+export const MOCKUP_CATEGORIES: MockupCategory[] = [
+  "vertical",
+  "horizontal",
+  "square",
+  "duo",
+  "trio",
+];
+
+export const MOCKUP_CATEGORY_LABELS: Record<MockupCategory, string> = {
+  vertical: "Vertical (Tekli)",
+  horizontal: "Horizontal (Tekli)",
+  square: "Square (Tekli)",
+  duo: "2'li Set",
+  trio: "3'lü Set",
+};
+
 export type MockupTemplatesIndex = Partial<
-  Record<Orientation, OrientationTemplates>
+  Record<MockupCategory, OrientationTemplates>
 >;

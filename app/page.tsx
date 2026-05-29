@@ -13,12 +13,14 @@ import {
 } from "./components/ActionPanel";
 import { CompletedProductsView } from "./components/CompletedProductsView";
 import { TemplatesView } from "./components/TemplatesView";
+import { PricesView } from "./components/PricesView";
 import { MockupSelectionModal } from "./components/MockupSelectionModal";
 import {
+  MOCKUP_CATEGORIES,
   PRODUCT_TYPE_META,
   type ActionStepKey,
+  type MockupCategory,
   type MockupTemplatesIndex,
-  type Orientation,
   type Product,
   type ProductMeta,
   type ProductType,
@@ -27,12 +29,15 @@ import {
 } from "./lib/types";
 import { readImage } from "./lib/image";
 import {
-  clearMockupOrientation,
+  clearMockupCategory,
+  deleteMockupTemplate,
   deleteWorkspace,
   listMockupTemplates,
   listWorkspaces,
+  moveMockupTemplate,
   openFolder,
   pickMockupFolder,
+  publishToEtsy,
   runExport,
   runMockup,
   runUpscaleRerun,
@@ -80,8 +85,8 @@ export default function Home() {
   const [templatesIndex, setTemplatesIndex] = useState<MockupTemplatesIndex>({});
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
-  const [scanningOrientation, setScanningOrientation] =
-    useState<Orientation | null>(null);
+  const [scanningCategory, setScanningCategory] =
+    useState<MockupCategory | null>(null);
 
   // Mockup seçim modal state'i
   const [mockupModalTarget, setMockupModalTarget] = useState<{
@@ -131,8 +136,8 @@ export default function Home() {
 
   const totalTemplates = useMemo(() => {
     let total = 0;
-    for (const o of ["vertical", "horizontal", "square"] as Orientation[]) {
-      total += templatesIndex[o]?.templates.length ?? 0;
+    for (const c of MOCKUP_CATEGORIES) {
+      total += templatesIndex[c]?.templates.length ?? 0;
     }
     return total;
   }, [templatesIndex]);
@@ -153,37 +158,69 @@ export default function Home() {
   }, []);
 
   const handlePickAndScan = useCallback(
-    async (orientation: Orientation) => {
-      if (scanningOrientation) return;
+    async (category: MockupCategory) => {
+      if (scanningCategory) return;
       setTemplatesError(null);
       try {
         const folder = await pickMockupFolder(
-          `"${orientation}" için mockup klasörünü seç`
+          `"${category}" için mockup klasörünü seç (mevcut şablonlara eklenir)`
         );
         if (!folder) return;
-        setScanningOrientation(orientation);
-        await scanMockupFolder(orientation, folder);
+        setScanningCategory(category);
+        await scanMockupFolder(category, folder);
         await refreshTemplates();
       } catch (err) {
         setTemplatesError(
           err instanceof Error ? err.message : "Tarama başarısız"
         );
       } finally {
-        setScanningOrientation(null);
+        setScanningCategory(null);
       }
     },
-    [scanningOrientation, refreshTemplates]
+    [scanningCategory, refreshTemplates]
   );
 
-  const handleClearOrientation = useCallback(
-    async (orientation: Orientation) => {
+  const handleClearCategory = useCallback(
+    async (category: MockupCategory) => {
       setTemplatesError(null);
       try {
-        await clearMockupOrientation(orientation);
+        await clearMockupCategory(category);
         await refreshTemplates();
       } catch (err) {
         setTemplatesError(
           err instanceof Error ? err.message : "Silme başarısız"
+        );
+      }
+    },
+    [refreshTemplates]
+  );
+
+  const handleDeleteTemplate = useCallback(
+    async (category: MockupCategory, templateId: string) => {
+      try {
+        await deleteMockupTemplate(category, templateId);
+        await refreshTemplates();
+      } catch (err) {
+        setTemplatesError(
+          err instanceof Error ? err.message : "Şablon silinemedi"
+        );
+      }
+    },
+    [refreshTemplates]
+  );
+
+  const handleMoveTemplate = useCallback(
+    async (
+      fromCategory: MockupCategory,
+      toCategory: MockupCategory,
+      templateId: string
+    ) => {
+      try {
+        await moveMockupTemplate(fromCategory, toCategory, templateId);
+        await refreshTemplates();
+      } catch (err) {
+        setTemplatesError(
+          err instanceof Error ? err.message : "Şablon taşınamadı"
         );
       }
     },
@@ -486,6 +523,37 @@ export default function Home() {
     [running, refreshWorkspaces]
   );
 
+  const [publishingProduct, setPublishingProduct] = useState<{
+    workspaceId: string;
+    productId: string;
+  } | null>(null);
+
+  const handlePublishToEtsy = useCallback(
+    async (wsId: string, productId: string) => {
+      if (publishingProduct) return;
+      setWsError(null);
+      setPublishingProduct({ workspaceId: wsId, productId });
+      try {
+        const result = await publishToEtsy(wsId, productId);
+        const msg = result.listingUrl
+          ? `Etsy draft oluşturuldu: ${result.listingUrl}`
+          : `Etsy draft oluşturuldu (listing_id=${result.listingId})`;
+        if (
+          confirm(
+            `${msg}\n\n${result.uploadedImages} mockup + ${result.uploadedStatics} static + ${result.videoUploaded ? "1 video" : "video yok"} yüklendi.\n\nListing'i tarayıcıda aç?`
+          )
+        ) {
+          if (result.listingUrl) window.open(result.listingUrl, "_blank");
+        }
+      } catch (err) {
+        setWsError(err instanceof Error ? err.message : "Etsy publish başarısız");
+      } finally {
+        setPublishingProduct(null);
+      }
+    },
+    [publishingProduct]
+  );
+
   const ready = completeProducts.length > 0;
 
   return (
@@ -550,6 +618,8 @@ export default function Home() {
             onDeleteWorkspace={handleDeleteWorkspace}
             onRunStep={handleRerunStep}
             onOpenFolder={handleOpenFolder}
+            onPublishToEtsy={handlePublishToEtsy}
+            publishingProduct={publishingProduct}
           />
         )}
 
@@ -557,13 +627,17 @@ export default function Home() {
           <TemplatesView
             index={templatesIndex}
             loading={templatesLoading}
-            scanning={scanningOrientation}
+            scanning={scanningCategory}
             error={templatesError}
             onPickAndScan={handlePickAndScan}
-            onClear={handleClearOrientation}
+            onClear={handleClearCategory}
             onRefresh={refreshTemplates}
+            onDeleteTemplate={handleDeleteTemplate}
+            onMoveTemplate={handleMoveTemplate}
           />
         )}
+
+        {tab === "prices" && <PricesView />}
       </main>
 
       {mockupModalTarget && (

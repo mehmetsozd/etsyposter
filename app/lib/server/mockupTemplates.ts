@@ -10,9 +10,9 @@ import {
 } from "./photoshop";
 import { projectRoot } from "./paths";
 import type {
+  MockupCategory,
   MockupTemplate,
   MockupTemplatesIndex,
-  Orientation,
   OrientationTemplates,
   SmartObjectInfo,
 } from "../types";
@@ -41,18 +41,73 @@ export async function getTemplatesIndex(): Promise<MockupTemplatesIndex> {
   return readIndex();
 }
 
-export async function clearOrientation(orientation: Orientation): Promise<void> {
+export async function clearCategory(category: MockupCategory): Promise<void> {
   const index = await readIndex();
-  delete index[orientation];
+  delete index[category];
   await writeIndex(index);
+}
+
+/**
+ * Removes a single template from a category, leaving the rest intact.
+ * Used when the user spots a misidentified PSD in the gallery.
+ */
+export async function removeTemplate(
+  category: MockupCategory,
+  templateId: string
+): Promise<void> {
+  const index = await readIndex();
+  const block = index[category];
+  if (!block) return;
+  block.templates = block.templates.filter((t) => t.id !== templateId);
+  await writeIndex(index);
+}
+
+/**
+ * Moves a template from one category to another. Used to fix
+ * misclassifications (e.g. a horizontal PSD that landed in the vertical
+ * folder). No-op when source and target are the same.
+ */
+export async function moveTemplate(
+  fromCategory: MockupCategory,
+  toCategory: MockupCategory,
+  templateId: string
+): Promise<MockupTemplate> {
+  if (fromCategory === toCategory) {
+    throw new Error("Hedef kategori kaynakla aynı");
+  }
+  const index = await readIndex();
+  const fromBlock = index[fromCategory];
+  if (!fromBlock) {
+    throw new Error(`Kaynak kategori boş: ${fromCategory}`);
+  }
+  const template = fromBlock.templates.find((t) => t.id === templateId);
+  if (!template) {
+    throw new Error(`Şablon bulunamadı: ${templateId}`);
+  }
+
+  fromBlock.templates = fromBlock.templates.filter((t) => t.id !== templateId);
+
+  const now = new Date().toISOString();
+  const toBlock: OrientationTemplates = index[toCategory] ?? {
+    sourceFolder: "",
+    lastScannedAt: now,
+    templates: [],
+  };
+  if (!toBlock.templates.some((t) => t.id === templateId)) {
+    toBlock.templates.push(template);
+  }
+  index[toCategory] = toBlock;
+
+  await writeIndex(index);
+  return template;
 }
 
 export async function getTemplateById(
   templateId: string
 ): Promise<MockupTemplate | null> {
   const index = await readIndex();
-  for (const orientation of Object.keys(index) as Orientation[]) {
-    const block = index[orientation];
+  for (const category of Object.keys(index) as MockupCategory[]) {
+    const block = index[category];
     if (!block) continue;
     const found = block.templates.find((t) => t.id === templateId);
     if (found) return found;
@@ -254,11 +309,17 @@ export interface ScanProgress {
   errors: { psdPath: string; message: string }[];
 }
 
-export async function scanOrientationFolder(
-  orientation: Orientation,
+/**
+ * Scans a folder of PSDs and APPENDS new templates to the given category.
+ * Existing templates (matched by PSD path hash) are kept untouched so the
+ * user can run multiple scans on different source folders for the same
+ * category without losing prior work.
+ */
+export async function scanCategoryFolder(
+  category: MockupCategory,
   folderPath: string,
   onProgress?: (progress: ScanProgress) => void
-): Promise<OrientationTemplates> {
+): Promise<{ block: OrientationTemplates; addedCount: number }> {
   await validatePhotoshopApp();
 
   const psds = await listPsdFilesRecursive(folderPath);
@@ -268,17 +329,27 @@ export async function scanOrientationFolder(
     );
   }
 
+  const index = await readIndex();
+  const existingBlock = index[category];
+  const existingTemplates = existingBlock?.templates ?? [];
+  const existingIds = new Set(existingTemplates.map((t) => t.id));
+
+  // Pre-filter: skip PSDs we've already scanned (same path hash) before going
+  // through Photoshop. Saves time on repeat scans.
+  const toScan = psds.filter((p) => !existingIds.has(hashPath(p)));
+  const skipped = psds.length - toScan.length;
+
   const tempDir = path.join(DATA_DIR, ".temp");
   await fs.mkdir(tempDir, { recursive: true });
 
-  const templates: MockupTemplate[] = [];
+  const newTemplates: MockupTemplate[] = [];
   const errors: { psdPath: string; message: string }[] = [];
   const now = new Date().toISOString();
 
-  for (let i = 0; i < psds.length; i++) {
-    const psdPath = psds[i];
+  for (let i = 0; i < toScan.length; i++) {
+    const psdPath = toScan[i];
     onProgress?.({
-      total: psds.length,
+      total: toScan.length,
       scanned: i,
       current: path.basename(psdPath),
       errors: [...errors],
@@ -286,7 +357,6 @@ export async function scanOrientationFolder(
     try {
       const smartObjects = await scanSinglePsd(psdPath, tempDir);
       if (smartObjects.length === 0) {
-        // Skip PSDs without smart objects (not usable as mockup templates)
         errors.push({
           psdPath,
           message: "Smart object bulunamadı, atlanıyor.",
@@ -294,7 +364,7 @@ export async function scanOrientationFolder(
         continue;
       }
       const previewPath = findPreviewPath(psdPath);
-      templates.push({
+      newTemplates.push({
         id: hashPath(psdPath),
         name: path.basename(psdPath, path.extname(psdPath)),
         psdPath,
@@ -310,21 +380,23 @@ export async function scanOrientationFolder(
   }
 
   onProgress?.({
-    total: psds.length,
-    scanned: psds.length,
-    current: "",
+    total: toScan.length,
+    scanned: toScan.length,
+    current: skipped > 0 ? `${skipped} mevcut PSD atlandı` : "",
     errors,
   });
 
+  const mergedTemplates: MockupTemplate[] = [
+    ...existingTemplates,
+    ...newTemplates,
+  ];
   const block: OrientationTemplates = {
     sourceFolder: folderPath,
     lastScannedAt: now,
-    templates,
+    templates: mergedTemplates,
   };
-
-  const index = await readIndex();
-  index[orientation] = block;
+  index[category] = block;
   await writeIndex(index);
 
-  return block;
+  return { block, addedCount: newTemplates.length };
 }

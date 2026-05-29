@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ORIENTATION_META,
   PRODUCT_TYPE_META,
+  type MockupCategory,
   type MockupTemplate,
   type MockupTemplatesIndex,
   type Orientation,
@@ -34,16 +35,25 @@ export function MockupSelectionModal({
     product.images[0]?.orientation ?? "square";
   const requiredSoCount = product.images.length;
 
+  // Set ürünler (2'li / 3'lü) "duo" / "trio" kategorisinden çekilir; tekli
+  // ürünler ise orientation'a göre vertical/horizontal/square'dan çekilir.
+  const category: MockupCategory =
+    product.type === "duo"
+      ? "duo"
+      : product.type === "trio"
+        ? "trio"
+        : orientation;
+
   const matchingTemplates = useMemo<MockupTemplate[]>(() => {
-    const block = templatesIndex[orientation];
+    const block = templatesIndex[category];
     if (!block) return [];
     return block.templates.filter(
       (t) => t.smartObjects.length === requiredSoCount
     );
-  }, [templatesIndex, orientation, requiredSoCount]);
+  }, [templatesIndex, category, requiredSoCount]);
 
   // Reset selection automatically by keying state on the filter combo.
-  const filterKey = `${orientation}|${requiredSoCount}`;
+  const filterKey = `${category}|${requiredSoCount}`;
   const [filterSig, setFilterSig] = useState(filterKey);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   if (filterSig !== filterKey) {

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { scanOrientationFolder } from "../../../lib/server/mockupTemplates";
-import type { Orientation } from "../../../lib/types";
+import { scanCategoryFolder } from "../../../lib/server/mockupTemplates";
+import { MOCKUP_CATEGORIES, type MockupCategory } from "../../../lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 3600; // up to 1 hour for big libraries
 
 interface RequestBody {
-  orientation: Orientation;
+  category: MockupCategory;
   folderPath: string;
 }
 
@@ -21,9 +21,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (!body.orientation || !["vertical", "horizontal", "square"].includes(body.orientation)) {
+  if (!body.category || !MOCKUP_CATEGORIES.includes(body.category)) {
     return NextResponse.json(
-      { error: "Geçersiz orientation" },
+      { error: "Geçersiz kategori" },
       { status: 400 }
     );
   }
@@ -35,13 +35,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await scanOrientationFolder(
-      body.orientation,
-      body.folderPath
-    );
+    const result = await scanCategoryFolder(body.category, body.folderPath);
     return NextResponse.json({
-      orientation: body.orientation,
-      block: result,
+      category: body.category,
+      block: result.block,
+      addedCount: result.addedCount,
     });
   } catch (error) {
     const message =

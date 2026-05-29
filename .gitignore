@@ -37,7 +37,10 @@ yarn-error.log*
 # project workspace (uploaded + generated files)
 /public/workspace/
 
-# mockup templates index (paths to PSDs/PNGs are machine-specific)
+# Etsy listing'lere eklenen sabit görseller (kullanıcıya özel asset'ler)
+/public/etsy-static-mockups/
+
+# mockup templates index + Etsy tokens (machine-specific, sensitive)
 /data/
 
 # video mockup PSDs (paid assets, machine-specific paths)

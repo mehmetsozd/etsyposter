@@ -1,15 +1,22 @@
 "use client";
 
-export type TabKey = "new" | "completed" | "templates";
+export type TabKey = "new" | "completed" | "templates" | "prices";
 
 interface Props {
   active: TabKey;
   completedCount: number;
   templateCount: number;
+  priceCount?: number;
   onChange: (tab: TabKey) => void;
 }
 
-export function Tabs({ active, completedCount, templateCount, onChange }: Props) {
+export function Tabs({
+  active,
+  completedCount,
+  templateCount,
+  priceCount,
+  onChange,
+}: Props) {
   return (
     <div className="border-b border-slate-200 bg-white">
       <div className="max-w-5xl mx-auto px-6 flex gap-1">
@@ -71,6 +78,26 @@ export function Tabs({ active, completedCount, templateCount, onChange }: Props)
               <rect x="14" y="3" width="7" height="7" rx="1" />
               <rect x="3" y="14" width="7" height="7" rx="1" />
               <rect x="14" y="14" width="7" height="7" rx="1" />
+            </svg>
+          }
+        />
+        <TabButton
+          active={active === "prices"}
+          onClick={() => onChange("prices")}
+          label="Fiyatlar"
+          badge={priceCount}
+          icon={
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="w-4 h-4"
+            >
+              <line x1="12" y1="1" x2="12" y2="23" />
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
             </svg>
           }
         />

@@ -1,6 +1,6 @@
 import type {
+  MockupCategory,
   MockupTemplatesIndex,
-  Orientation,
   OrientationTemplates,
   Product,
   WorkspaceSummary,
@@ -187,36 +187,92 @@ export async function pickMockupFolder(prompt?: string): Promise<string | null> 
 }
 
 export async function scanMockupFolder(
-  orientation: Orientation,
+  category: MockupCategory,
   folderPath: string
-): Promise<OrientationTemplates> {
+): Promise<{ block: OrientationTemplates; addedCount: number }> {
   const res = await fetch("/api/mockup-templates/scan", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ orientation, folderPath }),
+    body: JSON.stringify({ category, folderPath }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body.error || "Tarama başarısız");
   }
   const data = (await res.json()) as {
-    orientation: Orientation;
+    category: MockupCategory;
     block: OrientationTemplates;
+    addedCount: number;
   };
-  return data.block;
+  return { block: data.block, addedCount: data.addedCount };
 }
 
-export async function clearMockupOrientation(
-  orientation: Orientation
+export async function clearMockupCategory(
+  category: MockupCategory
 ): Promise<void> {
-  const res = await fetch(`/api/mockup-templates/clear/${orientation}`, {
+  const res = await fetch(`/api/mockup-templates/clear/${category}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error("Silme başarısız");
 }
 
+export async function deleteMockupTemplate(
+  category: MockupCategory,
+  templateId: string
+): Promise<void> {
+  const res = await fetch(
+    `/api/mockup-templates/template?category=${category}&id=${encodeURIComponent(templateId)}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || "Şablon silinemedi");
+  }
+}
+
+export async function moveMockupTemplate(
+  fromCategory: MockupCategory,
+  toCategory: MockupCategory,
+  templateId: string
+): Promise<void> {
+  const res = await fetch("/api/mockup-templates/template", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fromCategory, toCategory, templateId }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || "Taşıma başarısız");
+  }
+}
+
 export function mockupPreviewUrl(templateId: string): string {
   return `/api/mockup-templates/preview/${templateId}`;
+}
+
+export interface EtsyPublishResult {
+  listingId: number;
+  listingUrl: string | null;
+  uploadedImages: number;
+  uploadedStatics: number;
+  videoUploaded: boolean;
+}
+
+export async function publishToEtsy(
+  workspaceId: string,
+  productId: string,
+  title?: string
+): Promise<EtsyPublishResult> {
+  const res = await fetch("/api/etsy/publish", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspaceId, productId, title }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || `Publish failed (${res.status})`);
+  }
+  return res.json();
 }
 
 export async function deleteWorkspace(workspaceId: string): Promise<void> {

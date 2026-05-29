@@ -37,6 +37,8 @@ interface Props {
     step: ActionStepKey
   ) => void;
   onOpenFolder: (workspaceId: string, productId?: string) => void;
+  onPublishToEtsy: (workspaceId: string, productId: string) => void;
+  publishingProduct: { workspaceId: string; productId: string } | null;
 }
 
 export function CompletedProductsView({
@@ -48,6 +50,8 @@ export function CompletedProductsView({
   onDeleteWorkspace,
   onRunStep,
   onOpenFolder,
+  onPublishToEtsy,
+  publishingProduct,
 }: Props) {
   const totalProducts = useMemo(
     () => workspaces.reduce((sum, w) => sum + w.meta.products.length, 0),
@@ -118,10 +122,18 @@ export function CompletedProductsView({
             key={ws.meta.id}
             workspace={ws}
             running={running}
+            publishingProductId={
+              publishingProduct?.workspaceId === ws.meta.id
+                ? publishingProduct.productId
+                : null
+            }
             onDelete={() => onDeleteWorkspace(ws.meta.id)}
             onOpenFolder={(productId) => onOpenFolder(ws.meta.id, productId)}
             onRunStep={(productId, step) =>
               onRunStep(ws.meta.id, productId, step)
+            }
+            onPublishToEtsy={(productId) =>
+              onPublishToEtsy(ws.meta.id, productId)
             }
           />
         ))}
@@ -133,15 +145,19 @@ export function CompletedProductsView({
 function WorkspaceGroup({
   workspace,
   running,
+  publishingProductId,
   onDelete,
   onOpenFolder,
   onRunStep,
+  onPublishToEtsy,
 }: {
   workspace: WorkspaceSummary;
   running: RunningState | null;
+  publishingProductId: string | null;
   onDelete: () => void;
   onOpenFolder: (productId?: string) => void;
   onRunStep: (productId: string, step: ActionStepKey) => void;
+  onPublishToEtsy: (productId: string) => void;
 }) {
   const { meta, status } = workspace;
   const statusMap = useMemo(() => {
@@ -190,8 +206,10 @@ function WorkspaceGroup({
               product={product}
               status={productStatus}
               running={running}
+              publishing={publishingProductId === product.id}
               onOpenFolder={() => onOpenFolder(product.id)}
               onRunStep={(step) => onRunStep(product.id, step)}
+              onPublishToEtsy={() => onPublishToEtsy(product.id)}
             />
           );
         })}
@@ -205,15 +223,19 @@ function ProductRow({
   product,
   status,
   running,
+  publishing,
   onOpenFolder,
   onRunStep,
+  onPublishToEtsy,
 }: {
   workspaceId: string;
   product: WorkspaceSummary["meta"]["products"][number];
   status: ProductStatus;
   running: RunningState | null;
+  publishing: boolean;
   onOpenFolder: () => void;
   onRunStep: (step: ActionStepKey) => void;
+  onPublishToEtsy: () => void;
 }) {
   const typeMeta = PRODUCT_TYPE_META[product.type];
   const subtitle =
@@ -261,7 +283,7 @@ function ProductRow({
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-1.5 shrink-0 max-w-[320px] justify-end items-center">
+        <div className="flex flex-wrap gap-1.5 shrink-0 max-w-[420px] justify-end items-center">
           <button
             type="button"
             onClick={onOpenFolder}
@@ -269,6 +291,40 @@ function ProductRow({
             className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-slate-200 bg-white text-slate-600 hover:border-brand-400 hover:text-brand-700 hover:bg-brand-50/40 transition-colors"
           >
             <FolderIcon className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={onPublishToEtsy}
+            disabled={publishing}
+            title="Etsy'de draft listing oluştur"
+            className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 h-7 rounded-md border transition-all ${
+              publishing
+                ? "border-orange-300 bg-orange-50 text-orange-700"
+                : "border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
+            }`}
+          >
+            {publishing ? (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+                Gönderiliyor…
+              </>
+            ) : (
+              <>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="w-3.5 h-3.5"
+                >
+                  <line x1="22" y1="2" x2="11" y2="13" />
+                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
+                Etsy
+              </>
+            )}
           </button>
           {STEP_ORDER.map((step) => {
             const isRunning =
