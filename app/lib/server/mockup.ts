@@ -7,7 +7,6 @@ import {
   safeFilename,
 } from "./workspace";
 import {
-  getPhotoshopConfig,
   jsxStr,
   runPhotoshopJsx,
   validatePhotoshopApp,
@@ -44,8 +43,7 @@ export async function renderMockups(params: {
     throw new Error(`Ürün bulunamadı: ${params.productId}`);
   }
 
-  const config = getPhotoshopConfig();
-  await validatePhotoshopApp(config.appName);
+  await validatePhotoshopApp();
 
   const dirs = await ensureProductDirs(params.workspaceId, params.productId);
 

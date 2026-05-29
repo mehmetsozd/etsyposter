@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { pickFolderViaOsa } from "../../../lib/server/mockupTemplates";
+import { pickFolderNative } from "../../../lib/server/mockupTemplates";
 
 export const runtime = "nodejs";
 
@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const folder = await pickFolderViaOsa(
+    const folder = await pickFolderNative(
       body.prompt || "Mockup klasörünü seç"
     );
     return NextResponse.json({ folder });

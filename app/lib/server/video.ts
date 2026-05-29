@@ -81,8 +81,7 @@ export async function renderVideoMockup(params: {
   const orientation: Orientation =
     product.images[0]?.orientation ?? "square";
 
-  const psConfig = getPhotoshopConfig();
-  await validatePhotoshopApp(psConfig.appName);
+  await validatePhotoshopApp();
 
   const config = getVideoConfig();
   const psdPath = videoPsdPath(config, product.type, orientation);

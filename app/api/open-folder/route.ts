@@ -19,9 +19,9 @@ interface RequestBody {
 }
 
 export async function POST(req: NextRequest) {
-  if (process.platform !== "darwin") {
+  if (process.platform !== "darwin" && process.platform !== "win32") {
     return NextResponse.json(
-      { error: "Klasör açma yalnızca macOS'ta destekleniyor." },
+      { error: "Klasör açma yalnızca macOS ve Windows'ta destekleniyor." },
       { status: 400 }
     );
   }
@@ -66,7 +66,18 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    await execFileAsync("open", [resolvedTarget]);
+    if (process.platform === "darwin") {
+      await execFileAsync("open", [resolvedTarget]);
+    } else {
+      // explorer.exe Finder benzeri klasör penceresi açar. Başarılı durumda
+      // bile bazen non-zero exit kodu döner (Windows tuhaflığı) — bu yüzden
+      // hatayı yutuyoruz; klasör penceresi yine de açılır.
+      try {
+        await execFileAsync("explorer.exe", [resolvedTarget]);
+      } catch {
+        // ignore explorer.exe non-zero exit
+      }
+    }
     return NextResponse.json({ ok: true, path: resolvedTarget });
   } catch (error) {
     const message =

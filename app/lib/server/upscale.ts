@@ -5,11 +5,7 @@ import {
   safeFilename,
   fileExists,
 } from "./workspace";
-import {
-  getPhotoshopConfig,
-  runPhotoshopAction,
-  validatePhotoshopApp,
-} from "./photoshop";
+import { runPhotoshopAction, validatePhotoshopApp } from "./photoshop";
 import { toPublicUrl } from "./paths";
 import type { Orientation } from "../types";
 
@@ -44,8 +40,7 @@ export async function upscaleWorkspace(
   workspaceId: string,
   products: UpscaleProductInput[]
 ): Promise<UpscaleProductResult[]> {
-  const config = getPhotoshopConfig();
-  await validatePhotoshopApp(config.appName);
+  await validatePhotoshopApp();
 
   const results: UpscaleProductResult[] = [];
 

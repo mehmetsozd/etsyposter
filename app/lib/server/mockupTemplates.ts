@@ -4,7 +4,6 @@ import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import {
-  getPhotoshopConfig,
   jsxStr,
   runPhotoshopJsx,
   validatePhotoshopApp,
@@ -62,13 +61,22 @@ export async function getTemplateById(
 }
 
 /**
- * Opens the native macOS folder picker via osascript. Returns the chosen
- * POSIX path, or null if the user cancelled.
+ * Opens a native folder picker dialog for the running OS. Returns the chosen
+ * path, or `null` if the user cancelled.
+ *   - macOS: AppleScript "choose folder" via `osascript`
+ *   - Windows: `System.Windows.Forms.FolderBrowserDialog` via PowerShell
  */
-export async function pickFolderViaOsa(prompt: string): Promise<string | null> {
-  if (process.platform !== "darwin") {
-    throw new Error("Klasör seçimi yalnızca macOS'ta destekleniyor.");
-  }
+export async function pickFolderNative(
+  prompt: string
+): Promise<string | null> {
+  if (process.platform === "darwin") return pickFolderMac(prompt);
+  if (process.platform === "win32") return pickFolderWindows(prompt);
+  throw new Error(
+    "Klasör seçimi yalnızca macOS ve Windows'ta destekleniyor."
+  );
+}
+
+async function pickFolderMac(prompt: string): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync("osascript", [
       "-e",
@@ -82,6 +90,35 @@ export async function pickFolderViaOsa(prompt: string): Promise<string | null> {
     const message =
       error instanceof Error ? error.message : String(error);
     if (/User cancel/i.test(message) || /-128/.test(message)) return null;
+    throw new Error(`Klasör seçimi başarısız: ${message}`);
+  }
+}
+
+async function pickFolderWindows(prompt: string): Promise<string | null> {
+  // PowerShell's single-quoted string only needs '' for embedded apostrophes.
+  const escapedPrompt = prompt.replace(/'/g, "''");
+  const script = `
+Add-Type -AssemblyName System.Windows.Forms | Out-Null
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = '${escapedPrompt}'
+$dialog.UseDescriptionForTitle = $true
+$dialog.ShowNewFolderButton = $true
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+  Write-Output $dialog.SelectedPath
+}
+`;
+  try {
+    const { stdout } = await execFileAsync("powershell.exe", [
+      "-NoProfile",
+      "-STA",
+      "-Command",
+      script,
+    ]);
+    const trimmed = stdout.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : String(error);
     throw new Error(`Klasör seçimi başarısız: ${message}`);
   }
 }
@@ -222,8 +259,7 @@ export async function scanOrientationFolder(
   folderPath: string,
   onProgress?: (progress: ScanProgress) => void
 ): Promise<OrientationTemplates> {
-  const config = getPhotoshopConfig();
-  await validatePhotoshopApp(config.appName);
+  await validatePhotoshopApp();
 
   const psds = await listPsdFilesRecursive(folderPath);
   if (psds.length === 0) {

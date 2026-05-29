@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -7,30 +7,85 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const POLL_INTERVAL_MS = 1000;
 
+// Common Windows install paths for Adobe Photoshop. Used when
+// PHOTOSHOP_APP_PATH is not explicitly set in the environment.
+const WINDOWS_PHOTOSHOP_CANDIDATES = [
+  "C:\\Program Files\\Adobe\\Adobe Photoshop 2026\\Photoshop.exe",
+  "C:\\Program Files\\Adobe\\Adobe Photoshop 2025\\Photoshop.exe",
+  "C:\\Program Files\\Adobe\\Adobe Photoshop 2024\\Photoshop.exe",
+  "C:\\Program Files\\Adobe\\Adobe Photoshop 2023\\Photoshop.exe",
+  "C:\\Program Files\\Adobe\\Adobe Photoshop CC 2024\\Photoshop.exe",
+  "C:\\Program Files\\Adobe\\Adobe Photoshop CC 2023\\Photoshop.exe",
+];
+
 export interface PhotoshopConfig {
   appName: string;
+  appPath: string | null;
   actionSet: string;
 }
 
 export function getPhotoshopConfig(): PhotoshopConfig {
+  const rawAppPath = process.env.PHOTOSHOP_APP_PATH;
   return {
     appName: process.env.PHOTOSHOP_APP_NAME || "Adobe Photoshop 2026",
+    appPath:
+      rawAppPath && rawAppPath.trim().length > 0 ? rawAppPath.trim() : null,
     actionSet: process.env.PHOTOSHOP_ACTION_SET || "EtsyAutomation",
   };
 }
 
-export async function validatePhotoshopApp(appName: string): Promise<void> {
-  if (process.platform !== "darwin") {
+/**
+ * Verifies that Photoshop is installed and reachable on the current OS.
+ * - macOS: uses `open -Ra` to check the app bundle is registered.
+ * - Windows: resolves `Photoshop.exe` path from env or known candidates.
+ */
+export async function validatePhotoshopApp(): Promise<void> {
+  const config = getPhotoshopConfig();
+
+  if (process.platform === "darwin") {
+    try {
+      await execFileAsync("open", ["-Ra", config.appName]);
+      return;
+    } catch {
+      throw new Error(
+        `Photoshop bulunamadı: "${config.appName}". .env.local içinde PHOTOSHOP_APP_NAME değerini güncelle.`
+      );
+    }
+  }
+
+  if (process.platform === "win32") {
+    await resolveWindowsPhotoshopExe(config.appPath);
+    return;
+  }
+
+  throw new Error(
+    "Photoshop entegrasyonu yalnızca macOS ve Windows'ta destekleniyor."
+  );
+}
+
+async function resolveWindowsPhotoshopExe(
+  explicit: string | null
+): Promise<string> {
+  if (explicit) {
+    if (await pathExists(explicit)) return explicit;
     throw new Error(
-      "Photoshop entegrasyonu yalnızca macOS'ta destekleniyor."
+      `Photoshop bulunamadı: "${explicit}". .env.local içinde PHOTOSHOP_APP_PATH yolunu güncelle.`
     );
   }
+  for (const candidate of WINDOWS_PHOTOSHOP_CANDIDATES) {
+    if (await pathExists(candidate)) return candidate;
+  }
+  throw new Error(
+    "Photoshop bulunamadı. .env.local içinde PHOTOSHOP_APP_PATH değişkenine Photoshop.exe'nin tam yolunu belirt (ör. C:\\Program Files\\Adobe\\Adobe Photoshop 2026\\Photoshop.exe)."
+  );
+}
+
+async function pathExists(p: string): Promise<boolean> {
   try {
-    await execFileAsync("open", ["-Ra", appName]);
+    await fs.access(p);
+    return true;
   } catch {
-    throw new Error(
-      `Photoshop bulunamadı: "${appName}". .env.local içinde PHOTOSHOP_APP_NAME değerini güncelle.`
-    );
+    return false;
   }
 }
 
@@ -52,12 +107,11 @@ export async function runPhotoshopJsx({
   errorPath: string;
   timeoutMs?: number;
 }): Promise<string> {
-  const config = getPhotoshopConfig();
   const jsx = wrapJsx({ body: jsxBody, errorPath });
 
   try {
     await fs.writeFile(jsxPath, jsx, "utf8");
-    await invokePhotoshop(config.appName, jsxPath);
+    await invokePhotoshop(jsxPath);
     return await waitForCompletion({ donePath, errorPath, timeoutMs });
   } finally {
     await Promise.allSettled([
@@ -200,17 +254,47 @@ ${body}
 `;
 }
 
-async function invokePhotoshop(appName: string, jsxPath: string): Promise<void> {
-  await execFileAsync("osascript", [
-    "-e",
-    `tell application "${escapeAppleScript(appName)}"`,
-    "-e",
-    "activate",
-    "-e",
-    `do javascript file (POSIX file "${escapeAppleScript(jsxPath)}")`,
-    "-e",
-    "end tell",
-  ]);
+/**
+ * Hands the JSX file to Photoshop and returns immediately. The Node side then
+ * polls the done/error marker files written by the JSX wrapper, so the actual
+ * synchronization happens through the filesystem regardless of platform.
+ */
+async function invokePhotoshop(jsxPath: string): Promise<void> {
+  const config = getPhotoshopConfig();
+
+  if (process.platform === "darwin") {
+    await execFileAsync("osascript", [
+      "-e",
+      `tell application "${escapeAppleScript(config.appName)}"`,
+      "-e",
+      "activate",
+      "-e",
+      `do javascript file (POSIX file "${escapeAppleScript(jsxPath)}")`,
+      "-e",
+      "end tell",
+    ]);
+    return;
+  }
+
+  if (process.platform === "win32") {
+    const exe = await resolveWindowsPhotoshopExe(config.appPath);
+    // `Photoshop.exe <script.jsx>` launches Photoshop (or hands off to an
+    // existing instance) and runs the script. We DETACH because the parent
+    // Photoshop process stays alive for the whole user session — awaiting
+    // execFile here would block forever. Completion is detected via the
+    // done/error marker files instead.
+    const child = spawn(exe, [jsxPath], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: false,
+    });
+    child.unref();
+    return;
+  }
+
+  throw new Error(
+    "Photoshop entegrasyonu yalnızca macOS ve Windows'ta destekleniyor."
+  );
 }
 
 async function waitForCompletion({

@@ -8,11 +8,7 @@ import {
   readWorkspaceMeta,
   resetProductSubdir,
 } from "./workspace";
-import {
-  getPhotoshopConfig,
-  runPhotoshopResize,
-  validatePhotoshopApp,
-} from "./photoshop";
+import { runPhotoshopResize, validatePhotoshopApp } from "./photoshop";
 import { toPublicUrl } from "./paths";
 
 export const EXPORT_RATIOS: { label: string; short: number; long: number }[] = [
@@ -98,8 +94,7 @@ export async function exportWorkspace(
     throw new Error(`Workspace bulunamadı: ${workspaceId}`);
   }
 
-  const config = getPhotoshopConfig();
-  await validatePhotoshopApp(config.appName);
+  await validatePhotoshopApp();
 
   const targetIds = productIds && productIds.length > 0
     ? new Set(productIds)

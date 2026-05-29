@@ -19,10 +19,10 @@
 
 ## Photoshop ayarları
 
-Photoshop entegrasyonu için `.env.local` dosyasını aç (Not Defteri yeterli) ve içindeki yolları Windows'a göre düzenle. Örnek:
+Photoshop entegrasyonu Windows üzerinde de çalışır. `.env.local` dosyasını aç (Not Defteri yeterli) ve **Windows için aşağıdaki satırı doldur**:
 
 ```
-PHOTOSHOP_APP_NAME="Adobe Photoshop 2026"
+PHOTOSHOP_APP_PATH="C:\Program Files\Adobe\Adobe Photoshop 2026\Photoshop.exe"
 PHOTOSHOP_ACTION_SET="EtsyAutomation"
 PHOTOSHOP_UPSCALE_ACTION="Upscale"
 VIDEO_MOCKUPS_DIR="video_mockups"
@@ -30,7 +30,26 @@ PHOTOSHOP_VIDEO_TEMP_DIR="data/video-temp"
 PHOTOSHOP_VIDEO_ACTION="SAVE_VIDEO"
 ```
 
-> **Not**: Bu projenin Photoshop entegrasyonu şu an macOS'a göre (`osascript`) yazıldı. Windows üzerinde Photoshop kısımları çalışmaz; ürün listeleme, yükleme, klasör görüntüleme gibi UI işleri çalışır. Windows Photoshop entegrasyonu gerekiyorsa ayrıca eklenebilir.
+- `PHOTOSHOP_APP_PATH` boş bırakılırsa sistem şu yolları otomatik tarar:
+  - `C:\Program Files\Adobe\Adobe Photoshop 2026\Photoshop.exe`
+  - `C:\Program Files\Adobe\Adobe Photoshop 2025\Photoshop.exe`
+  - `C:\Program Files\Adobe\Adobe Photoshop 2024\Photoshop.exe`
+  - `C:\Program Files\Adobe\Adobe Photoshop 2023\Photoshop.exe`
+  - `C:\Program Files\Adobe\Adobe Photoshop CC 2024\Photoshop.exe`
+- Farklı bir konuma kurduysan tam yolu yaz.
+
+### Photoshop tarafı kontrol listesi
+
+- `EtsyAutomation` adında bir action set oluştur (kendine ait isim kullanabilirsin, env'i de güncelle).
+- Set içinde şu action'lar olmalı:
+  - `Upscale` — görseli büyüten action
+  - `SAVE_VIDEO` — videoyu `PHOTOSHOP_VIDEO_TEMP_DIR` klasörüne kaydeden action
+- Mockup ve video PSD'lerini ilgili klasöre koy.
+
+### Klasör seç ve klasör aç davranışı
+
+- Windows üzerinde "Klasör Seç" PowerShell'in **FolderBrowserDialog** dialogu ile açılır.
+- "Klasörü Aç" butonları `explorer.exe` ile Windows Explorer'da klasörü açar.
 
 ## Sık karşılaşılan sorunlar
 
