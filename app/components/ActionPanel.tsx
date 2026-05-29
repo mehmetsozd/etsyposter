@@ -2,13 +2,14 @@
 
 import type { ReactNode } from "react";
 
-export type ActionKey = "upscale" | "export" | "mockup" | "video";
+export type ActionKey = "upscale" | "export" | "mockup" | "video" | "publish";
 
 export const ACTION_ORDER: ActionKey[] = [
   "upscale",
   "export",
   "mockup",
   "video",
+  "publish",
 ];
 
 const ACTION_META: Record<
@@ -87,6 +88,24 @@ const ACTION_META: Record<
       >
         <rect x="2" y="6" width="14" height="12" rx="2" />
         <path d="M22 8l-6 4 6 4V8z" />
+      </svg>
+    ),
+  },
+  publish: {
+    title: "Etsy'e Gönder",
+    subtitle: "Draft listing oluştur",
+    icon: (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="w-5 h-5"
+      >
+        <line x1="22" y1="2" x2="11" y2="13" />
+        <polygon points="22 2 15 22 11 13 2 9 22 2" />
       </svg>
     ),
   },
@@ -182,8 +201,8 @@ export function ActionPanel({
                 ready && !anyRunning ? "text-white/85" : "text-slate-400"
               }`}
             >
-              Upscale → Export → Mockup Görsel → Video Mockup, sırayla
-              çalışsın.
+              Mockup seç → Upscale → Export → Mockup → Video → Etsy
+              draft&apos;ı oluştur.
             </div>
           </div>
           <div
@@ -217,7 +236,7 @@ export function ActionPanel({
         <div className="flex-1 h-px bg-slate-200" />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {ACTION_ORDER.map((key, idx) => (
           <ActionCard
             key={key}

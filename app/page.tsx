@@ -51,6 +51,7 @@ const INITIAL_STATUSES: Record<ActionKey, ActionStatus> = {
   export: "idle",
   mockup: "idle",
   video: "idle",
+  publish: "idle",
 };
 
 interface RunningState {
@@ -92,6 +93,13 @@ export default function Home() {
   const [mockupModalTarget, setMockupModalTarget] = useState<{
     workspaceId: string;
     product: ProductMeta;
+  } | null>(null);
+  // Full Otomasyon akışında her ürün için kullanıcı seçimini bekleyen modal
+  // state'i. resolve callback'i seçim yapıldığında veya iptal edildiğinde
+  // çağrılır, böylece handleRunAll Promise tabanlı olarak ilerler.
+  const [fullAutomationSelection, setFullAutomationSelection] = useState<{
+    product: ProductMeta;
+    resolve: (templateIds: string[] | null) => void;
   } | null>(null);
   const [mockupRendering, setMockupRendering] = useState(false);
   const [mockupRenderProgress, setMockupRenderProgress] = useState<{
@@ -387,6 +395,92 @@ export default function Home() {
     }
   }, [completeProducts, workspaceId, refreshWorkspaces]);
 
+  /**
+   * Runs mockup render for every product in the workspace using the given
+   * per-product template selection map.
+   */
+  const performMockupForAll = useCallback(
+    async (
+      targetWs: string,
+      selections: Map<string, string[]>
+    ): Promise<boolean> => {
+      setActionStatuses((s) => ({ ...s, mockup: "running" }));
+      try {
+        for (const [productId, templateIds] of selections) {
+          if (templateIds.length === 0) continue;
+          await runMockup(targetWs, productId, templateIds);
+        }
+        setActionStatuses((s) => ({ ...s, mockup: "done" }));
+        void refreshWorkspaces();
+        return true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Bilinmeyen hata";
+        setActionStatuses((s) => ({ ...s, mockup: "error" }));
+        setActionError({ action: "mockup", message });
+        return false;
+      }
+    },
+    [refreshWorkspaces]
+  );
+
+  /**
+   * Publishes every product in the workspace to Etsy as a draft listing.
+   */
+  const performPublish = useCallback(
+    async (overrideWorkspaceId?: string): Promise<boolean> => {
+      const targetWs = overrideWorkspaceId ?? workspaceId;
+      if (!targetWs) {
+        setActionError({
+          action: "publish",
+          message: "Önce Upscale çalıştırarak workspace oluştur.",
+        });
+        return false;
+      }
+      const ws = workspaces.find((w) => w.meta.id === targetWs);
+      const productIds =
+        ws?.meta.products.map((p) => p.id) ??
+        completeProducts.map((p) => p.id);
+      if (productIds.length === 0) {
+        setActionError({ action: "publish", message: "Ürün bulunamadı." });
+        return false;
+      }
+      setActionError(null);
+      setActionStatuses((s) => ({ ...s, publish: "running" }));
+      let successCount = 0;
+      const errors: string[] = [];
+      try {
+        for (const pid of productIds) {
+          try {
+            await publishToEtsy(targetWs, pid);
+            successCount += 1;
+          } catch (err) {
+            const m = err instanceof Error ? err.message : String(err);
+            errors.push(`${pid.slice(-8)}: ${m}`);
+          }
+        }
+        if (errors.length > 0 && successCount === 0) {
+          setActionStatuses((s) => ({ ...s, publish: "error" }));
+          setActionError({ action: "publish", message: errors.join("\n") });
+          return false;
+        }
+        setActionStatuses((s) => ({ ...s, publish: "done" }));
+        if (errors.length > 0) {
+          setActionError({
+            action: "publish",
+            message: `${successCount} başarılı, ${errors.length} hata: ${errors.join("; ")}`,
+          });
+        }
+        return true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Bilinmeyen hata";
+        setActionStatuses((s) => ({ ...s, publish: "error" }));
+        setActionError({ action: "publish", message });
+        return false;
+      }
+    },
+    [workspaceId, workspaces, completeProducts]
+  );
+
   const handleRunAction = useCallback(
     (action: ActionKey) => {
       if (action === "upscale") {
@@ -401,21 +495,78 @@ export default function Home() {
         void performVideo();
         return;
       }
+      if (action === "publish") {
+        void performPublish();
+        return;
+      }
       // mockup requires template selection — handled in Tamamlanan tab
       console.log("Run action (not implemented from new tab):", action);
     },
-    [performUpscale, performExport, performVideo]
+    [performUpscale, performExport, performVideo, performPublish]
+  );
+
+  /**
+   * Builds a placeholder ProductMeta object for the mockup-selection modal,
+   * using data from the in-memory uploaded Product (pre-upload). The modal
+   * only needs orientation, type, and image count for filtering — IDs and
+   * URLs are placeholders since the workspace doesn't exist yet.
+   */
+  const buildPlaceholderProductMeta = useCallback(
+    (product: Product): ProductMeta => ({
+      id: product.id,
+      type: product.type,
+      createdAt: new Date().toISOString(),
+      images: product.images.map((img, i) => ({
+        index: i,
+        filename: img.file.name,
+        orientation: img.orientation,
+        width: img.width,
+        height: img.height,
+        originalUrl: img.url,
+      })),
+    }),
+    []
   );
 
   const handleRunAll = useCallback(async () => {
-    // Mockup requires user template selection, so Full Otomasyon chains
-    // Upscale → Export → Video and skips Mockup.
+    if (completeProducts.length === 0) return;
+
+    // Phase 1: Collect mockup template selections per product.
+    const selections = new Map<string, string[]>();
+    for (const product of completeProducts) {
+      const meta = buildPlaceholderProductMeta(product);
+      const ids = await new Promise<string[] | null>((resolve) => {
+        setFullAutomationSelection({ product: meta, resolve });
+      });
+      if (ids === null) return; // user cancelled
+      selections.set(product.id, ids);
+    }
+
+    // Phase 2: Upscale (creates workspace + uploads files)
     const wsId = await performUpscale();
     if (!wsId) return;
+
+    // Phase 3: Export (all products in workspace)
     const exportOk = await performExport(wsId);
     if (!exportOk) return;
+
+    // Phase 4: Mockup render with selected templates per product
+    await performMockupForAll(wsId, selections);
+
+    // Phase 5: Video for every product
     await performVideo(wsId);
-  }, [performUpscale, performExport, performVideo]);
+
+    // Phase 6: Publish each product to Etsy
+    await performPublish(wsId);
+  }, [
+    completeProducts,
+    buildPlaceholderProductMeta,
+    performUpscale,
+    performExport,
+    performMockupForAll,
+    performVideo,
+    performPublish,
+  ]);
 
   const handleRerunStep = useCallback(
     async (wsId: string, productId: string, step: ActionStepKey) => {
@@ -649,6 +800,25 @@ export default function Home() {
           error={mockupError}
           onClose={handleMockupClose}
           onRender={handleMockupRender}
+        />
+      )}
+
+      {/* Full Otomasyon — mockup seçim modal'ı (Promise tabanlı) */}
+      {fullAutomationSelection && (
+        <MockupSelectionModal
+          product={fullAutomationSelection.product}
+          templatesIndex={templatesIndex}
+          rendering={false}
+          renderProgress={null}
+          error={null}
+          onClose={() => {
+            fullAutomationSelection.resolve(null);
+            setFullAutomationSelection(null);
+          }}
+          onRender={async (templateIds) => {
+            fullAutomationSelection.resolve(templateIds);
+            setFullAutomationSelection(null);
+          }}
         />
       )}
     </div>
