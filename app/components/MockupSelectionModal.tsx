@@ -101,25 +101,48 @@ export function MockupSelectionModal({
         className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between gap-4">
-          <div>
-            <div className="text-base font-semibold text-slate-900">
-              Mockup Şablonları Seç
+        {/* Header — ürün artwork thumbnail'leri + bilgi + kapat */}
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            {/* Ürün görselleri preview — hangi artwork için mockup seçtiğini gör */}
+            <div className="flex gap-1.5 shrink-0">
+              {product.images.map((img) => (
+                <div
+                  key={img.index}
+                  className="w-16 h-16 rounded-lg overflow-hidden bg-slate-100 ring-1 ring-slate-200 shadow-sm"
+                  title={img.filename}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={img.originalUrl}
+                    alt={img.filename}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              ))}
             </div>
-            <div className="text-xs text-slate-500 mt-0.5">
-              Ürün:{" "}
-              <span className="font-mono">{product.id}</span> •{" "}
-              {PRODUCT_TYPE_META[product.type].label} •{" "}
-              {ORIENTATION_META[orientation].label} • {requiredSoCount}{" "}
-              görsel
+            <div className="min-w-0 flex-1">
+              <div className="text-base font-semibold text-slate-900">
+                Mockup Şablonları Seç
+              </div>
+              <div className="text-xs text-slate-500 mt-0.5 truncate">
+                {PRODUCT_TYPE_META[product.type].label} •{" "}
+                {ORIENTATION_META[orientation].label} • {requiredSoCount}{" "}
+                görsel
+              </div>
+              <div
+                className="text-[10px] text-slate-400 font-mono truncate mt-0.5"
+                title={product.id}
+              >
+                {product.id}
+              </div>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
             disabled={rendering}
-            className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-30"
+            className="shrink-0 p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-30"
           >
             <svg
               viewBox="0 0 24 24"
