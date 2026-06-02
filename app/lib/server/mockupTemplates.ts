@@ -152,31 +152,66 @@ async function pickFolderMac(prompt: string): Promise<string | null> {
 async function pickFolderWindows(prompt: string): Promise<string | null> {
   // PowerShell's single-quoted string only needs '' for embedded apostrophes.
   const escapedPrompt = prompt.replace(/'/g, "''");
-  // KRİTİK: Çıktıyı UTF-8'e zorla. Default Windows code page (cp1252) Türkçe
-  // karakterleri (İ, ş, ğ, ç, ü, ö) bozar — örn. "NİSA" → "N�SA". Node bunu
-  // okuyup fs.readdir'a verince klasör bulunamaz hatası alırız.
-  // BOM yazmaması için UTF8Encoding'i parametresiz değil $false ile yaratıyoruz.
+  // Windows 10'da yaygın iki sorun:
+  // 1) FolderBrowserDialog tarayıcının ARKASINDA açılıp görünmez. Çözüm:
+  //    görünmez ama TopMost bir Form'u dialog'un owner'ı yap.
+  // 2) Türkçe karakterler PowerShell default code page'de (cp1254) bozulur.
+  //    Çözüm: stdout encoding'ini UTF-8'e zorla (BOM'suz).
   const script = `
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
 $OutputEncoding = New-Object System.Text.UTF8Encoding $false
 Add-Type -AssemblyName System.Windows.Forms | Out-Null
+
+# Görünmez ama TopMost owner Form — dialog'un browser'ın önüne çıkması için
+$owner = New-Object System.Windows.Forms.Form
+$owner.TopMost = $true
+$owner.ShowInTaskbar = $false
+$owner.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+$owner.Width = 1
+$owner.Height = 1
+$owner.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+$owner.Location = New-Object System.Drawing.Point(-10000, -10000)
+$owner.Show()
+$owner.Activate()
+[System.Windows.Forms.Application]::DoEvents()
+
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
 $dialog.Description = '${escapedPrompt}'
 $dialog.UseDescriptionForTitle = $true
 $dialog.ShowNewFolderButton = $true
-if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-  [Console]::Out.WriteLine($dialog.SelectedPath)
+
+try {
+  $result = $dialog.ShowDialog($owner)
+  if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
+    [Console]::Out.WriteLine($dialog.SelectedPath)
+  }
+} finally {
+  $owner.Close()
+  $owner.Dispose()
 }
 `;
   try {
-    const { stdout } = await execFileAsync(
+    const { stdout, stderr } = await execFileAsync(
       "powershell.exe",
-      ["-NoProfile", "-STA", "-Command", script],
+      [
+        "-NoProfile",
+        "-STA",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        script,
+      ],
       { encoding: "utf8" }
     );
     // BOM (U+FEFF) PowerShell sürümüne göre yazılabilir — temizleyelim.
     const trimmed = stdout.trim().replace(/^﻿/, "");
-    return trimmed.length > 0 ? trimmed : null;
+    if (trimmed.length > 0) return trimmed;
+    // stdout boşsa kullanıcı iptal etti (Cancel butonu) demektir; ama stderr'de
+    // hata varsa bunu bildir — sessiz başarısızlık olmasın.
+    if (stderr && stderr.trim().length > 0) {
+      throw new Error(`PowerShell stderr: ${stderr.trim()}`);
+    }
+    return null;
   } catch (error) {
     const message =
       error instanceof Error ? error.message : String(error);

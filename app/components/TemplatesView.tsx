@@ -16,6 +16,7 @@ interface Props {
   scanning: MockupCategory | null;
   error: string | null;
   onPickAndScan: (category: MockupCategory) => void;
+  onScanPath: (category: MockupCategory, folderPath: string) => void;
   onClear: (category: MockupCategory) => void;
   onRefresh: () => void;
   onDeleteTemplate: (
