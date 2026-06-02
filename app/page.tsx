@@ -188,6 +188,29 @@ export default function Home() {
     [scanningCategory, refreshTemplates]
   );
 
+  /**
+   * Manuel olarak yapıştırılan bir klasör yoluyla tarama yapar — Windows'ta
+   * native folder picker açılmadığında fallback olarak kullanılır.
+   */
+  const handleScanPath = useCallback(
+    async (category: MockupCategory, folderPath: string) => {
+      if (scanningCategory) return;
+      setTemplatesError(null);
+      setScanningCategory(category);
+      try {
+        await scanMockupFolder(category, folderPath);
+        await refreshTemplates();
+      } catch (err) {
+        setTemplatesError(
+          err instanceof Error ? err.message : "Tarama başarısız"
+        );
+      } finally {
+        setScanningCategory(null);
+      }
+    },
+    [scanningCategory, refreshTemplates]
+  );
+
   const handleClearCategory = useCallback(
     async (category: MockupCategory) => {
       setTemplatesError(null);
@@ -781,6 +804,7 @@ export default function Home() {
             scanning={scanningCategory}
             error={templatesError}
             onPickAndScan={handlePickAndScan}
+            onScanPath={handleScanPath}
             onClear={handleClearCategory}
             onRefresh={refreshTemplates}
             onDeleteTemplate={handleDeleteTemplate}

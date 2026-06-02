@@ -36,6 +36,7 @@ export function TemplatesView({
   scanning,
   error,
   onPickAndScan,
+  onScanPath,
   onClear,
   onRefresh,
   onDeleteTemplate,
@@ -126,6 +127,7 @@ export function TemplatesView({
             scanning={scanning === category}
             anyScanning={scanning !== null}
             onPickAndScan={() => onPickAndScan(category)}
+            onScanPath={(folderPath) => onScanPath(category, folderPath)}
             onClear={() => onClear(category)}
             onDeleteTemplate={(id) => onDeleteTemplate(category, id)}
             onMoveTemplate={(toCategory, id) =>
@@ -146,6 +148,7 @@ function CategoryBlock({
   scanning,
   anyScanning,
   onPickAndScan,
+  onScanPath,
   onClear,
   onDeleteTemplate,
   onMoveTemplate,
@@ -163,6 +166,7 @@ function CategoryBlock({
   scanning: boolean;
   anyScanning: boolean;
   onPickAndScan: () => void;
+  onScanPath: (folderPath: string) => void;
   onClear: () => void;
   onDeleteTemplate: (templateId: string) => Promise<void>;
   onMoveTemplate: (
@@ -243,6 +247,38 @@ function CategoryBlock({
               </>
             )}
           </button>
+          {!scanning && (
+            <button
+              type="button"
+              onClick={() => {
+                const path = window.prompt(
+                  `"${category}" için klasörün TAM yolunu yapıştır:\n` +
+                    `(Windows: C:\\Users\\...\\Square)\n` +
+                    `(macOS: /Users/.../Square)`,
+                  ""
+                );
+                const trimmed = path?.trim();
+                if (trimmed) onScanPath(trimmed);
+              }}
+              disabled={anyScanning}
+              title="Klasör seçim diyaloğu açılmıyorsa manuel yol yapıştır"
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-3 h-8 rounded-md border border-slate-200 bg-white text-slate-700 hover:border-brand-400 hover:text-brand-700 hover:bg-brand-50/40 transition-all disabled:opacity-50"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="w-3.5 h-3.5"
+              >
+                <rect x="9" y="9" width="13" height="13" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              Yol Yapıştır
+            </button>
+          )}
           {count > 0 && !scanning && (
             <button
               type="button"
