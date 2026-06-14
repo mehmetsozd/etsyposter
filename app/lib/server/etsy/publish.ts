@@ -406,7 +406,7 @@ function buildInventoryProducts(
         property_values: [
           {
             property_id: qualityPropertyId,
-            property_name: "Paper Quality",
+            property_name: "Frame Option",
             values: [quality],
           },
           {
