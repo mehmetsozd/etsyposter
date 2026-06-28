@@ -312,6 +312,41 @@ export default function Home() {
     [products]
   );
 
+  /**
+   * Bir set ürünün (2'li / 3'lü) içindeki görselleri yeniden sıralar.
+   * Pool dizisinde ürünün spread'i sürekli olduğu için, ürünün başlangıç
+   * index'ini bulup orada parçayı yeniden sıralıyoruz.
+   */
+  const handleReorderImages = useCallback(
+    (productId: string, fromIndex: number, toIndex: number) => {
+      if (fromIndex === toIndex) return;
+      const product = products.find((p) => p.id === productId);
+      if (!product) return;
+      const firstImageId = product.images[0]?.id;
+      if (!firstImageId) return;
+      setPool((prev) => {
+        const startIdx = prev.findIndex((img) => img.id === firstImageId);
+        if (startIdx < 0) return prev;
+        const count = product.images.length;
+        const slice = prev.slice(startIdx, startIdx + count);
+        if (
+          fromIndex < 0 ||
+          toIndex < 0 ||
+          fromIndex >= slice.length ||
+          toIndex >= slice.length
+        ) {
+          return prev;
+        }
+        const [moved] = slice.splice(fromIndex, 1);
+        slice.splice(toIndex, 0, moved);
+        const next = [...prev];
+        next.splice(startIdx, count, ...slice);
+        return next;
+      });
+    },
+    [products]
+  );
+
   const handleClearAll = useCallback(() => {
     pool.forEach((img) => URL.revokeObjectURL(img.url));
     setPool([]);
@@ -760,6 +795,7 @@ export default function Home() {
               incompleteCount={incompleteCount}
               upscaledUrls={upscaledUrls}
               onRemoveProduct={handleRemoveProduct}
+              onReorderImages={handleReorderImages}
               onClearAll={handleClearAll}
             />
 

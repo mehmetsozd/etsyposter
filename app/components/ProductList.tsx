@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, type DragEvent } from "react";
 import {
   ORIENTATION_META,
   PRODUCT_TYPE_META,
@@ -13,6 +14,11 @@ interface Props {
   upscaledUrls: Record<string, string>;
   onRemoveProduct: (id: string) => void;
   onClearAll: () => void;
+  onReorderImages: (
+    productId: string,
+    fromIndex: number,
+    toIndex: number
+  ) => void;
 }
 
 export function ProductList({
@@ -21,6 +27,7 @@ export function ProductList({
   upscaledUrls,
   onRemoveProduct,
   onClearAll,
+  onReorderImages,
 }: Props) {
   if (products.length === 0) {
     return (
@@ -71,6 +78,7 @@ export function ProductList({
             index={index + 1}
             upscaledUrls={upscaledUrls}
             onRemove={() => onRemoveProduct(product.id)}
+            onReorder={(from, to) => onReorderImages(product.id, from, to)}
           />
         ))}
       </div>
@@ -83,11 +91,13 @@ function ProductCard({
   index,
   upscaledUrls,
   onRemove,
+  onReorder,
 }: {
   product: Product;
   index: number;
   upscaledUrls: Record<string, string>;
   onRemove: () => void;
+  onReorder: (from: number, to: number) => void;
 }) {
   const meta = PRODUCT_TYPE_META[product.type];
   const expected = meta.imagesPerProduct;
@@ -98,6 +108,41 @@ function ProductCard({
   ).length;
   const allUpscaled =
     upscaledCount > 0 && upscaledCount === product.images.length;
+  // Tekli ürünlerde sıralamaya gerek yok; sadece 2'li ve 3'lü set'lerde aktif.
+  const canReorder = product.images.length > 1;
+
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const handleDragStart = (e: DragEvent<HTMLDivElement>, fromIdx: number) => {
+    if (!canReorder) return;
+    setDraggingIndex(fromIdx);
+    // Required for Firefox to actually start a drag
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(fromIdx));
+  };
+
+  const handleDragOver = (e: DragEvent<HTMLDivElement>, overIdx: number) => {
+    if (!canReorder || draggingIndex === null) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (overIdx !== dragOverIndex) setDragOverIndex(overIdx);
+  };
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>, toIdx: number) => {
+    if (!canReorder) return;
+    e.preventDefault();
+    if (draggingIndex !== null && draggingIndex !== toIdx) {
+      onReorder(draggingIndex, toIdx);
+    }
+    setDraggingIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggingIndex(null);
+    setDragOverIndex(null);
+  };
 
   const subtitle =
     product.type === "single"
@@ -112,21 +157,52 @@ function ProductCard({
     >
       <div className="flex items-start gap-4">
         <div className="flex gap-2">
-          {product.images.map((img) => {
+          {product.images.map((img, imgIdx) => {
             const isUpscaled = Boolean(upscaledUrls[img.id]);
+            const isDragging = draggingIndex === imgIdx;
+            const isDragOver =
+              dragOverIndex === imgIdx && draggingIndex !== imgIdx;
+            // Set ürünlerinde slot etiketi: 2'li → L/R, 3'lü → L/C/R
+            const slotLabel =
+              product.images.length === 2
+                ? ["L", "R"][imgIdx]
+                : product.images.length === 3
+                  ? ["L", "C", "R"][imgIdx]
+                  : null;
             return (
               <div
                 key={img.id}
-                className={`relative w-16 h-16 rounded-lg overflow-hidden bg-slate-100 ring-1 ${
+                draggable={canReorder}
+                onDragStart={(e) => handleDragStart(e, imgIdx)}
+                onDragOver={(e) => handleDragOver(e, imgIdx)}
+                onDrop={(e) => handleDrop(e, imgIdx)}
+                onDragEnd={handleDragEnd}
+                title={
+                  canReorder
+                    ? "Sürükleyip sırasını değiştir"
+                    : undefined
+                }
+                className={`relative w-16 h-16 rounded-lg overflow-hidden bg-slate-100 ring-1 transition-all ${
                   isUpscaled ? "ring-emerald-400" : "ring-slate-200"
+                } ${canReorder ? "cursor-grab active:cursor-grabbing" : ""} ${
+                  isDragging ? "opacity-40" : ""
+                } ${
+                  isDragOver
+                    ? "ring-2 ring-brand-500 scale-105"
+                    : ""
                 }`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={img.url}
                   alt={img.file.name}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover pointer-events-none"
                 />
+                {slotLabel && (
+                  <div className="absolute top-0.5 left-0.5 bg-slate-900/75 text-white text-[10px] font-bold rounded px-1 leading-tight">
+                    {slotLabel}
+                  </div>
+                )}
                 {isUpscaled && (
                   <div className="absolute bottom-0.5 right-0.5 bg-emerald-500 rounded-full w-4 h-4 flex items-center justify-center shadow">
                     <svg
