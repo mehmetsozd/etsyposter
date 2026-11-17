@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Poster Studio
 
-## Getting Started
+Etsy poster ürünleri için otomasyon paneli: görselleri yükle, **upscale → export → mockup → video → AI SEO → Etsy taslağı** adımlarını tek kuyrukta sırayla çalıştır. Tekli, 2'li ve 3'lü set ürünleri destekler.
 
-First, run the development server:
+Windows 10 / 11 + Adobe Photoshop üzerinde çalışır.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+---
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Kurulum (Windows)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 1. İndir
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+👉 **[Poster Studio'yu indir (ZIP)](https://github.com/mehmetsozd/etsyposter/archive/refs/heads/main.zip)**
 
-## Learn More
+(ya da bu sayfadaki yeşil **Code** düğmesi → **Download ZIP**)
 
-To learn more about Next.js, take a look at the following resources:
+### 2. Engeli kaldır ve klasöre çıkar
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. İnen `etsyposter-main.zip` dosyasına **sağ tıkla → Özellikler**.
+2. En altta **Engellemeyi kaldır** kutusu varsa işaretle → **Tamam**.
+3. Zip'e tekrar **sağ tıkla → Tümünü ayıkla…** → hedef olarak **`C:\`** yaz → **Ayıkla**.
+4. Sonuç: **`C:\etsyposter-main`** klasörü.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+> Masaüstü, Belgeler veya OneDrive klasörlerine çıkarma; `C:\` en sorunsuzudur.
 
-## Deploy on Vercel
+### 3. Kurulum rehberini aç
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+`C:\etsyposter-main` klasöründeki **`KURULUM_REHBERI.html`** dosyasına çift tıkla ve adımları sırayla izle.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Kısaca: **`BASLAT.bat`**'a çift tıklarsın; ilk açılışta Node.js'i, paketleri ve ayar dosyasını kendisi kurar, paneli Google Chrome'da açar. Sonra rehber Etsy, OpenAI ve Photoshop ayarlarını adım adım anlatır.
+
+---
+
+## Günlük kullanım
+
+- Paneli açmak: **`BASLAT.bat`**'a çift tıkla (siyah pencere açık kaldığı sürece panel çalışır).
+- Kullanım kılavuzu: panelde sol menü → **Kılavuz**.
+
+## Güncellemeler
+
+Yeni sürüm yayınlandığında panelde sol menüde **Ayarlar**'ın yanında **Yeni** etiketi çıkar. **Ayarlar → Güncelleme → Güncellemeyi al** ile yalnızca değişen dosyalar indirilir ve panel kendini yeniden başlatır. Ayarların, ürünlerin ve sabit görsellerin korunur. Tekrar zip indirmen gerekmez.
+
+---
+
+<details>
+<summary>Geliştirici notları</summary>
+
+- Next.js 16 (App Router) + Tailwind 4. Geliştirme: `npm install` → `npm run dev`.
+- Windows başlatıcı: `BASLAT.bat` → `scripts/panel.ps1` (Node kontrolü, `npm install`, `next build`, `next start`, Chrome).
+- Güncelleme kanalı bu reponun `main` dalıdır: `main`'e push edilen her commit kullanıcılara güncelleme olarak görünür (`app/lib/server/updater.ts`).
+- `.bat` / `.ps1` dosyaları CRLF olarak birebir saklanır (`.gitattributes`); düzenlerken satır sonlarını koru.
+
+</details>

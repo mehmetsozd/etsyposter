@@ -31,7 +31,7 @@ export function ProductList({
 }: Props) {
   if (products.length === 0) {
     return (
-      <section className="mt-8">
+      <section>
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-10 text-center">
           <div className="text-sm font-medium text-slate-600">
             Henüz ürün eklenmedi
@@ -45,7 +45,7 @@ export function ProductList({
   }
 
   return (
-    <section className="mt-8">
+    <section>
       <div className="flex items-center justify-between mb-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">

@@ -5,11 +5,18 @@ import { projectRoot } from "./paths";
 const ENV_PATH = path.join(projectRoot, ".env.local");
 
 /**
- * Whitelist of env keys editable from the settings UI. Sensitive credentials
- * (`ETSY_KEYSTRING`, `ETSY_SHARED_SECRET`) are intentionally excluded — those
- * must be set manually in `.env.local` by the operator.
+ * Whitelist of env keys editable from the settings UI — everything the panel
+ * needs, so an operator never has to open `.env.local`. Keys listed in
+ * `SECRET_KEYS` are write-only: they are never sent back to the browser.
  */
 export const SETTABLE_KEYS = [
+  // API credentials
+  "ETSY_KEYSTRING",
+  "ETSY_SHARED_SECRET",
+  "ETSY_REDIRECT_URI",
+  "OPENAI_API_KEY",
+  "OPENAI_MODEL",
+  "AI_SEO_ENABLED",
   // Etsy
   "ETSY_SHOP_ID",
   "ETSY_SHOP_NAME",
@@ -51,6 +58,9 @@ export const SETTABLE_KEYS = [
   "PHOTOSHOP_APP_PATH",
   "PHOTOSHOP_ACTION_SET",
   "PHOTOSHOP_UPSCALE_ACTION",
+  "PHOTOSHOP_UPSCALE_ACTION_VERTICAL",
+  "PHOTOSHOP_UPSCALE_ACTION_HORIZONTAL",
+  "PHOTOSHOP_UPSCALE_ACTION_SQUARE",
   // Mockup folders
   "VIDEO_MOCKUPS_DIR",
   "PHOTOSHOP_VIDEO_TEMP_DIR",
@@ -66,10 +76,34 @@ export function isSettableKey(key: string): key is SettableKey {
   return SETTABLE_SET.has(key);
 }
 
+export const SECRET_KEYS = new Set<SettableKey>([
+  "ETSY_SHARED_SECRET",
+  "OPENAI_API_KEY",
+]);
+
+// Pasted credentials often carry a stray space/newline; strip it on save.
+const CREDENTIAL_KEYS = new Set<SettableKey>([
+  "ETSY_KEYSTRING",
+  "ETSY_SHARED_SECRET",
+  "ETSY_REDIRECT_URI",
+  "OPENAI_API_KEY",
+  "OPENAI_MODEL",
+]);
+
+/** Current values; secrets are blanked out (see `readSecretStatus`). */
 export function readSettings(): Record<SettableKey, string> {
   const out = {} as Record<SettableKey, string>;
   for (const key of SETTABLE_KEYS) {
-    out[key] = process.env[key] ?? "";
+    out[key] = SECRET_KEYS.has(key) ? "" : (process.env[key] ?? "");
+  }
+  return out;
+}
+
+/** Whether each secret key currently has a value. */
+export function readSecretStatus(): Partial<Record<SettableKey, boolean>> {
+  const out: Partial<Record<SettableKey, boolean>> = {};
+  for (const key of SECRET_KEYS) {
+    out[key] = (process.env[key] ?? "").trim().length > 0;
   }
   return out;
 }
@@ -120,9 +154,10 @@ export async function writeSettings(
   // layer also validates.
   const safeUpdates: Partial<Record<SettableKey, string>> = {};
   for (const [k, v] of Object.entries(updates)) {
-    if (isSettableKey(k) && typeof v === "string") {
-      safeUpdates[k] = v;
-    }
+    if (!isSettableKey(k) || typeof v !== "string") continue;
+    // Secrets are never echoed to the UI, so an empty value means "keep".
+    if (SECRET_KEYS.has(k) && v.trim() === "") continue;
+    safeUpdates[k] = CREDENTIAL_KEYS.has(k) ? v.trim() : v;
   }
 
   if (Object.keys(safeUpdates).length === 0) return readSettings();

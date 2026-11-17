@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poster Studio — Kurulum Rehberi</title>
+<style>
+  :root {
+    --ink: #0f1c2e; --ink-2: #182a40; --ink-3: #223853; --ink-soft: #496285;
+    --line: #e3e1db; --paper: #f6f5f1; --card: #ffffff;
+    --text: #1e293b; --muted: #64748b;
+    --gold: #c9a763; --gold-dark: #906f35; --gold-soft: #f5eedb;
+    --ok: #15803d; --warn-bg: #fff7e6; --warn-line: #f0d9a8; --warn-text: #7a5212;
+    --danger-bg: #fdf0ef; --danger-line: #f3c9c4; --danger-text: #8f2a1f;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--paper); color: var(--text);
+    font: 15px/1.65 "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; }
+  a { color: var(--ink-3); }
+  code, kbd, pre { font-family: Consolas, "Cascadia Mono", ui-monospace, Menlo, monospace; }
+  code { background: #eef1f5; border: 1px solid #e1e6ee; border-radius: 6px; padding: 1px 6px; font-size: 13px; }
+  kbd { background: #fff; border: 1px solid #cfd6e0; border-bottom-width: 2px; border-radius: 6px; padding: 0 6px; font-size: 12.5px; }
+
+  .layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); min-height: 100vh; }
+  nav { position: sticky; top: 0; height: 100vh; overflow-y: auto; background: var(--ink); color: #c8d3e2; padding: 28px 18px; }
+  .brand { display: flex; gap: 12px; align-items: center; padding: 0 6px 22px; border-bottom: 1px solid rgba(255,255,255,.07); margin-bottom: 18px; }
+  .logo { width: 38px; height: 38px; border-radius: 11px; background: linear-gradient(135deg, #dcc28a, #906f35); display: grid; place-items: center; }
+  .brand b { color: #fff; font-size: 15px; display: block; }
+  .brand span { font-size: 12px; color: #9fb1ca; }
+  .progress { margin: 0 6px 18px; }
+  .progress-bar { height: 6px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .progress-bar i { display: block; height: 100%; width: 0; background: var(--gold); transition: width .3s; }
+  .progress small { display: block; margin-top: 6px; font-size: 12px; color: #9fb1ca; }
+  nav ol { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+  nav li a { display: flex; gap: 10px; align-items: center; padding: 7px 10px; border-radius: 9px; color: #c8d3e2; text-decoration: none; font-size: 13.5px; }
+  nav li a:hover { background: rgba(255,255,255,.05); color: #fff; }
+  nav li a .n { width: 22px; height: 22px; flex: none; border-radius: 7px; display: grid; place-items: center; font-size: 11px; font-weight: 700; background: rgba(255,255,255,.08); color: #c8d3e2; }
+  nav li a.done .n { background: var(--gold); color: var(--ink); }
+  nav .sep { margin: 16px 10px 8px; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #6d84a6; }
+
+  main { padding: 48px 56px 120px; max-width: 980px; }
+  .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: var(--gold-dark); }
+  h1 { font-size: 34px; line-height: 1.15; margin: 8px 0 10px; color: var(--ink); letter-spacing: -.01em; }
+  .lead { font-size: 16px; color: var(--muted); max-width: 680px; margin: 0; }
+  .overview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 28px 0 8px; }
+  .overview div { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+  .overview b { display: block; color: var(--ink); font-size: 14px; }
+  .overview span { font-size: 12.5px; color: var(--muted); }
+
+  section.step { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 26px 28px; margin-top: 22px; box-shadow: 0 1px 2px rgba(15,28,46,.04); scroll-margin-top: 20px; }
+  .step-head { display: flex; gap: 16px; align-items: flex-start; }
+  .step-num { flex: none; width: 40px; height: 40px; border-radius: 12px; background: var(--ink); color: var(--gold); display: grid; place-items: center; font-weight: 700; font-size: 15px; }
+  .step-head h2 { margin: 0; font-size: 20px; color: var(--ink); }
+  .step-head p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+  .step-head .time { margin-left: auto; flex: none; font-size: 12px; color: var(--muted); background: #f1f3f6; border-radius: 99px; padding: 3px 10px; }
+  .step h3 { font-size: 15px; color: var(--ink); margin: 22px 0 6px; }
+  .step ol.do, .step ul.do { margin: 10px 0 0; padding-left: 22px; }
+  .step ol.do li, .step ul.do li { margin: 6px 0; }
+  .done-toggle { margin-top: 20px; display: inline-flex; gap: 10px; align-items: center; cursor: pointer; user-select: none; font-size: 14px; font-weight: 600; color: var(--ink-3); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; background: #fafaf8; }
+  .done-toggle input { width: 17px; height: 17px; accent-color: var(--ink-3); }
+  section.step.is-done { border-color: #cfe3d4; }
+  section.step.is-done .step-num { background: var(--gold); color: var(--ink); }
+
+  .note, .warn, .danger, .tip { border-radius: 12px; padding: 12px 14px; margin: 14px 0 0; font-size: 14px; }
+  .note { background: #f1f4f9; border: 1px solid #dfe5ef; }
+  .tip { background: var(--gold-soft); border: 1px solid #ead9b0; }
+  .warn { background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-text); }
+  .danger { background: var(--danger-bg); border: 1px solid var(--danger-line); color: var(--danger-text); }
+  .note b, .tip b, .warn b, .danger b { color: inherit; }
+
+  .code { position: relative; margin: 12px 0 0; }
+  .code pre { margin: 0; background: var(--ink); color: #e4eaf2; border-radius: 12px; padding: 14px 16px; overflow-x: auto; font-size: 13px; line-height: 1.6; }
+  .code button { position: absolute; top: 8px; right: 8px; border: 0; border-radius: 8px; padding: 5px 10px; font-size: 12px; cursor: pointer; background: rgba(255,255,255,.1); color: #e4eaf2; }
+  .code button:hover { background: rgba(255,255,255,.18); }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+  td code { white-space: nowrap; }
+
+  .tree { background: #fafaf8; border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; font-family: Consolas, ui-monospace, monospace; font-size: 13px; white-space: pre; overflow-x: auto; margin-top: 12px; }
+  footer { margin-top: 40px; color: var(--muted); font-size: 13px; }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    nav { position: static; height: auto; }
+    main { padding: 28px 18px 80px; }
+    .overview { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media print { nav { display: none; } .layout { display: block; } .done-toggle, .code button { display: none; } }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav aria-label="Rehber bölümleri">
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#0f1c2e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M4 16l5-5 4 4 2-2 5 5"/><circle cx="15.5" cy="8.5" r="1.5"/></svg>
+      </div>
+      <div><b>Poster Studio</b><span>Windows kurulum rehberi</span></div>
+    </div>
+    <div class="progress">
+      <div class="progress-bar"><i id="bar"></i></div>
+      <small id="progress-text">0 / 0 adım tamamlandı</small>
+    </div>
+    <ol id="toc"></ol>
+  </nav>
+
+  <main>
+    <div class="eyebrow">Sıfırdan kurulum · Windows 10 / 11</div>
+    <h1>Poster Studio'yu kurmak</h1>
+    <p class="lead">Bu rehber, paneli hiç kurulmamış bir Windows bilgisayarda çalışır hâle getirmeyi baştan sona anlatır. Adımları sırayla yap; her adımın sonunda “Tamamladım” kutusunu işaretle, ilerlemen bu tarayıcıda saklanır.</p>
+
+    <div class="overview">
+      <div><b>~45 dakika</b><span>İlk kurulum toplam süresi</span></div>
+      <div><b>Photoshop 2023+</b><span>Upscale, export, mockup, video</span></div>
+      <div><b>Etsy hesabı</b><span>Taslak listing oluşturmak için</span></div>
+      <div><b>OpenAI hesabı</b><span>Title / açıklama / tag (isteğe bağlı)</span></div>
+    </div>
+
+    <!-- 1 -->
+    <section class="step" id="hazirlik" data-title="Hazırlık">
+      <div class="step-head"><div class="step-num">1</div><div><h2>Hazırlık</h2><p>Başlamadan önce elinde olması gerekenler.</p></div><span class="time">5 dk</span></div>
+      <ul class="do">
+        <li>Windows 10 veya 11, yönetici (admin) yetkisi olan bir kullanıcı.</li>
+        <li><b>Adobe Photoshop</b> (2023 veya daha yeni) kurulu ve lisanslı. Panel çalışırken Photoshop'u kendisi açar ve kullanır.</li>
+        <li>İnternet bağlantısı (kurulum, Etsy ve OpenAI için).</li>
+        <li>Etsy satıcı hesabı (mağaza açık olmalı).</li>
+        <li>İsteğe bağlı: OpenAI hesabı ve bakiyesi — ürün başlığı, açıklaması ve tag'lerini otomatik üretmek için.</li>
+        <li>Proje klasörü (bu rehberin bulunduğu klasör) — USB, Drive veya zip olarak.</li>
+      </ul>
+    </section>
+
+    <!-- 2 -->
+    <section class="step" id="klasor" data-title="İndir ve çıkar">
+      <div class="step-head"><div class="step-num">2</div><div><h2>İndir ve klasöre çıkar</h2><p>Bu rehberi okuyorsan büyük ihtimalle bu adımı yaptın; yine de kontrol et.</p></div><span class="time">3 dk</span></div>
+      <ol class="do">
+        <li>Paneli indir: <a href="https://github.com/mehmetsozd/etsyposter/archive/refs/heads/main.zip" target="_blank" rel="noreferrer"><b>etsyposter-main.zip</b></a> (GitHub sayfasında yeşil <b>Code → Download ZIP</b> ile aynı).</li>
+        <li>İnen zip'e <b>sağ tık → Özellikler</b>. En altta <b>Engellemeyi kaldır</b> kutusu varsa işaretle → <b>Tamam</b>. (Bu, Windows'un her dosyada güvenlik uyarısı göstermesini önler.)</li>
+        <li>Zip'e <b>sağ tık → Tümünü ayıkla…</b> → hedef olarak <code>C:\</code> yaz → <b>Ayıkla</b>.</li>
+        <li>Sonuç <code>C:\etsyposter-main</code> klasörü olmalı ve içinde <code>BASLAT.bat</code> görünmeli.</li>
+      </ol>
+      <div class="warn"><b>Zip'in içinden çalıştırma</b> ve klasörü Masaüstü / Belgeler / OneDrive içine koyma. OneDrive senkronizasyonu büyük görsel dosyalarını kilitleyip Photoshop'un yazmasını bozabilir.</div>
+      <div class="tree">C:\etsyposter-main
+├─ BASLAT.bat           ← her şey buradan: ilk kurulum + paneli açma
+├─ KURULUM.bat          ← (isteğe bağlı) paneli açmadan sadece kurulum
+├─ KURULUM_REHBERI.html ← bu rehber
+├─ app\  config\  public\  scripts\  ...</div>
+      <div class="note">İleride zip'i tekrar indirmen gerekmez: güncellemeler panelin içinden alınır (bkz. adım 12).</div>
+    </section>
+
+    <!-- 3 -->
+    <section class="step" id="ilk-acilis" data-title="İlk açılış (BASLAT.bat)">
+      <div class="step-head"><div class="step-num">3</div><div><h2>BASLAT.bat'a çift tıkla</h2><p>İlk açılışta kurulumu kendisi yapar; başka bir şey kurman gerekmez.</p></div><span class="time">5–10 dk</span></div>
+      <ol class="do">
+        <li>Proje klasöründeki <code>BASLAT.bat</code> dosyasına <b>çift tıkla</b>. Siyah bir pencere açılır ve adımları tek tek yazar.</li>
+        <li>Windows <b>“Bilgisayarınız korundu”</b> derse: <b>Ek bilgi → Yine de çalıştır</b>.</li>
+        <li>Pencere sırayla şunları kendisi yapar:
+          <ul>
+            <li><b>Node.js</b> yoksa otomatik kurar (izin isterse <b>Evet</b> de).</li>
+            <li>Ayar dosyasını (<code>.env.local</code>) ve gerekli klasörleri <b>otomatik oluşturur</b> — hiçbir dosyayı elle açman gerekmez.</li>
+            <li>Paketleri indirir ve paneli hazırlar (ilk seferde birkaç dakika).</li>
+            <li>Paneli başlatır ve <b>Google Chrome'da</b> <code>http://localhost:3000</code> sekmesini açar (Chrome yoksa varsayılan tarayıcıda).</li>
+          </ul>
+        </li>
+        <li>Chrome'da panel açıldıysa bu adım tamam. Bir sonraki açılışlarda bu işlemler atlanır, panel birkaç saniyede açılır.</li>
+      </ol>
+      <div class="warn"><b>Node.js otomatik kurulamazsa</b> pencere bunu söyler, Node.js indirme sayfasını ve bu rehberin <a href="#node-elle">Node.js'i elle kur</a> bölümünü kendiliğinden açar. O bölümdeki adımları yapıp <code>BASLAT.bat</code>'a tekrar çift tıkla.</div>
+    </section>
+
+    <!-- 3b -->
+    <section class="step" id="node-elle" data-title="Node.js'i elle kur (gerekirse)">
+      <div class="step-head"><div class="step-num">!</div><div><h2>Node.js'i elle kurmak</h2><p>Yalnızca BASLAT.bat “Node.js otomatik kurulamadı” derse gerekir.</p></div><span class="time">5 dk</span></div>
+      <ol class="do">
+        <li>Tarayıcıda <a href="https://nodejs.org/en/download" target="_blank" rel="noreferrer">nodejs.org/en/download</a> adresini aç.</li>
+        <li>Sayfada <b>LTS</b> yazan sürümü seç ve <b>Windows Installer (.msi)</b> düğmesine bas. Bilgisayarın 64-bit ise <b>x64</b> olanı al (çoğu bilgisayar x64'tür).</li>
+        <li>İnen <code>node-v…-x64.msi</code> dosyasına çift tıkla.</li>
+        <li>Kurulum penceresinde: <b>Next</b> → lisans kutusunu işaretle → <b>Next</b> → <b>Next</b> → <b>Next</b> → <b>Install</b>. Hiçbir ayarı değiştirme (özellikle <i>Add to PATH</i> açık kalmalı).</li>
+        <li>“Tools for Native Modules” diye ayrı bir kutu görürsen <b>işaretleme</b>, gerekmez.</li>
+        <li>Windows izin isterse <b>Evet</b> de. Bitince <b>Finish</b>.</li>
+        <li>Açık olan siyah <code>BASLAT.bat</code> penceresini <b>kapat</b> ve <code>BASLAT.bat</code>'a <b>yeniden çift tıkla</b>.</li>
+      </ol>
+      <div class="note"><b>Kontrol etmek istersen:</b> Başlat menüsüne <code>cmd</code> yaz, açılan pencerede <code>node --version</code> yaz ve Enter'a bas. <code>v22.…</code> gibi bir sürüm görüyorsan kurulum tamamdır. “tanınmıyor” yazıyorsa bilgisayarı yeniden başlatıp tekrar dene.</div>
+    </section>
+
+    <!-- 4 -->
+    <section class="step" id="baslat" data-title="Günlük kullanım">
+      <div class="step-head"><div class="step-num">4</div><div><h2>Her gün paneli açmak</h2><p>Kurulumdan sonra tek yapman gereken.</p></div><span class="time">10 sn</span></div>
+      <ol class="do">
+        <li><code>BASLAT.bat</code>'a çift tıkla → Chrome'da panel açılır.</li>
+        <li><b>Siyah pencereyi kapatma</b> — panel o pencere açık olduğu sürece çalışır. Simge durumuna küçültebilirsin.</li>
+        <li>Panel zaten açıkken tekrar çift tıklarsan yeni bir kopya başlatmaz, sadece Chrome'da sekmeyi açar.</li>
+        <li>Kapatmak için siyah pencereyi kapat ya da içinde <kbd>Ctrl</kbd> + <kbd>C</kbd> bas.</li>
+      </ol>
+      <div class="tip"><b>İpucu:</b> <code>BASLAT.bat</code>'a sağ tıklayıp <b>Gönder → Masaüstü (kısayol oluştur)</b> ile masaüstüne kısayol koyabilirsin.</div>
+    </section>
+
+    <!-- 5 -->
+    <section class="step" id="etsy-app" data-title="Etsy uygulaması">
+      <div class="step-head"><div class="step-num">5</div><div><h2>Etsy geliştirici uygulaması oluştur</h2><p>Panelin mağazana taslak listing açabilmesi için gerekli anahtarlar.</p></div><span class="time">10 dk</span></div>
+      <ol class="do">
+        <li><a href="https://www.etsy.com/developers/your-apps" target="_blank" rel="noreferrer">etsy.com/developers/your-apps</a> adresine mağaza hesabınla giriş yap ve yeni bir uygulama oluştur (ad örn. <i>Poster Studio</i>).</li>
+        <li>Uygulama oluşunca iki değer görürsün: <b>KEYSTRING</b> ve <b>SHARED SECRET</b>. Bu sayfayı açık bırak.</li>
+        <li>Uygulama ayarlarındaki <b>Callback URL</b> alanına tam olarak şunu ekle:</li>
+      </ol>
+      <div class="code"><pre>http://localhost:3000/etsy/oauth2callback</pre><button type="button">Kopyala</button></div>
+      <h3>Panele gir</h3>
+      <ol class="do">
+        <li>Panelde sol menüden <b>Ayarlar</b>'a git → <b>API Anahtarları</b> bölümü.</li>
+        <li><b>Etsy Keystring</b> ve <b>Etsy Shared Secret</b> alanlarına değerleri yapıştır → <b>Kaydet</b>.</li>
+        <li>Sayfanın üstündeki <b>Etsy ile Bağlan</b>'a tıkla, Etsy'de izin ver. “Bağlı” yazısını görmelisin.</li>
+      </ol>
+      <div class="warn"><b>Callback URL birebir aynı olmalı.</b> Sonda eğik çizgi, <code>https</code> veya farklı port olursa Etsy bağlantıyı reddeder.</div>
+    </section>
+
+    <!-- 6 -->
+    <section class="step" id="listing" data-title="Listing ayarları">
+      <div class="step-head"><div class="step-num">6</div><div><h2>Listing ve fiyat ayarları</h2><p>Her taslak listing'e uygulanacak sabit bilgiler.</p></div><span class="time">10 dk</span></div>
+      <ol class="do">
+        <li><b>Ayarlar → Listing Yapılandırması:</b> Shipping Profile, Return Policy ve Readiness State listelerinden mağazandakileri seç → <b>Değişiklikleri Kaydet</b>. Taxonomy ID poster için <code>1029</code> kalabilir.</li>
+        <li><b>Description — sabit alt kısım:</b> boyut listesi, üretim/kargo bilgileri gibi her ürünün altına eklenecek metni yaz. AI yalnızca üstteki ürün paragrafını üretir, bu metin hep altına eklenir.</li>
+        <li>Property ID'leri (aspect ratio, orientation, framing…) hazır gelir. Etsy değiştirirse aynı bölümdeki <b>Etsy'den Çek</b> düğmesiyle yeniden alınabilir.</li>
+        <li><b>Etsy Sabit Görseller:</b> her listing'e mockup'lardan sonra eklenecek görselleri (beden tablosu, kalite banner'ı vb.) sürükle-bırak ile yükle.</li>
+        <li>Sol menüden <b>Fiyatlar</b>: Tekli, 2'li Set, 3'lü Set ve Square için boyut × seçenek fiyatlarını gir. Boş bırakılan hücre Etsy'de kapalı varyasyon olur.</li>
+      </ol>
+    </section>
+
+    <!-- 7 -->
+    <section class="step" id="openai" data-title="OpenAI (SEO)">
+      <div class="step-head"><div class="step-num">7</div><div><h2>OpenAI anahtarı (isteğe bağlı)</h2><p>Title, açıklama, 13 tag ve alt text'i otomatik üretmek için.</p></div><span class="time">5 dk</span></div>
+      <ol class="do">
+        <li><a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">platform.openai.com/api-keys</a> → <b>Create new secret key</b>. Hesapta bakiye (billing) tanımlı olmalı.</li>
+        <li><b>Ayarlar → API Anahtarları → OpenAI API Key</b> alanına yapıştır → <b>Kaydet</b>. Model boş kalabilir.</li>
+        <li><b>Ayarlar → AI İçerik Üretimi</b> anahtarı açık olsun. Kapatırsan içerik üretilmez; title ve açıklamayı ürün başına elle girersin.</li>
+      </ol>
+      <div class="note">Üretim kuralları (telif yasakları, 140 karakter title, 13 tag…) <code>config\listing-rules.md</code> dosyasındadır; mağaza tarzına göre düzenlenebilir.</div>
+    </section>
+
+    <!-- 8 -->
+    <section class="step" id="photoshop" data-title="Photoshop action'ları">
+      <div class="step-head"><div class="step-num">8</div><div><h2>Photoshop action'larını hazırla</h2><p>Panel, Photoshop'ta senin kaydettiğin iki action'ı çağırır.</p></div><span class="time">10 dk</span></div>
+      <h3>a) Action set</h3>
+      <ol class="do">
+        <li>Photoshop → <b>Window → Actions</b> → panel menüsünden <b>New Set</b> → ad: <code>EtsyAutomation</code></li>
+      </ol>
+      <h3>b) Upscale action</h3>
+      <ol class="do">
+        <li>Örnek bir görsel aç. Set seçiliyken <b>New Action</b> → ad: <code>Upscale</code> → <b>Record</b>.</li>
+        <li><b>Yalnızca büyütme işlemini</b> yap (ör. Image → Image Size, Preserve Details 2.0 / Super Resolution, istediğin boyut).</li>
+        <li><b>Stop</b>'a bas. Action'a <b>dosya kaydetme / kapatma adımı ekleme</b> — açma, kaydetme ve kapatmayı panel kendisi yapar.</li>
+      </ol>
+      <h3>c) SAVE_VIDEO action (video mockup kullanacaksan)</h3>
+      <ol class="do">
+        <li>Bir video mockup PSD'si aç. Yeni action → ad: <code>SAVE_VIDEO</code> → <b>Record</b>.</li>
+        <li><b>File → Export → Render Video…</b> → konum olarak proje içindeki şu klasörü seç (yoksa oluştur):</li>
+      </ol>
+      <div class="code"><pre>C:\etsyposter-main\data\video-temp</pre><button type="button">Kopyala</button></div>
+      <ol class="do" start="3">
+        <li>Format H.264, <b>Render</b>. Bitince <b>Stop</b>.</li>
+      </ol>
+      <h3>d) Panelde kontrol et</h3>
+      <p>Ayarlar → <b>Photoshop &amp; Video</b>: Photoshop.exe otomatik bulunur. Farklı yere kurduysan tam yolunu yaz, ör.:</p>
+      <div class="code"><pre>C:\Program Files\Adobe\Adobe Photoshop 2026\Photoshop.exe</pre><button type="button">Kopyala</button></div>
+      <div class="warn"><b>Script izni:</b> panel ilk kez Photoshop'u çalıştırdığında Photoshop bir betiğin çalıştırılması için onay isteyebilir. <b>İzin ver</b> ve varsa “bir daha sorma” seçeneğini işaretle; aksi hâlde kuyruk o adımda bekler.</div>
+    </section>
+
+    <!-- 9 -->
+    <section class="step" id="sablon" data-title="Mockup şablonları">
+      <div class="step-head"><div class="step-num">9</div><div><h2>Mockup şablonlarını tanıt</h2><p>Ürünlerin yerleştirileceği PSD sahneleri.</p></div><span class="time">5 dk</span></div>
+      <ol class="do">
+        <li>PSD'leri türüne göre ayrı klasörlerde tut: tekli dikey, tekli yatay, kare, 2'li set, 3'lü set.</li>
+        <li>Sol menü → <b>Şablonlar</b> → ilgili kategoride <b>klasör seç</b>. Panel PSD'leri Photoshop'ta açıp içindeki smart object'leri tarar.</li>
+        <li>Tekli şablonda 1, 2'li sette 2, 3'lü sette 3 smart object olmalı.</li>
+      </ol>
+      <h3>Setlerde sıralama (sol → sağ)</h3>
+      <table>
+        <tr><th>Set</th><th>Smart object adları (önerilen)</th><th>Hangi görsel nereye</th></tr>
+        <tr><td>2'li</td><td><code>Left Frame</code>, <code>Right Frame</code></td><td>1. görsel sola, 2. görsel sağa</td></tr>
+        <tr><td>3'lü</td><td><code>Left Frame</code>, <code>Center Frame</code>, <code>Right Frame</code></td><td>1 → sol, 2 → orta, 3 → sağ</td></tr>
+      </table>
+      <div class="note">Adlar farklıysa panel çerçeveleri sahnedeki konumuna göre soldan sağa sıralar. Görsel sırası, Yeni Ürün ekranındaki yükleme sırasıdır ve sürükleyerek değiştirilebilir.</div>
+    </section>
+
+    <!-- 10 -->
+    <section class="step" id="video" data-title="Video mockup'ları">
+      <div class="step-head"><div class="step-num">10</div><div><h2>Video mockup PSD'leri (isteğe bağlı)</h2><p>Etsy listing videosu için.</p></div><span class="time">5 dk</span></div>
+      <p>Proje klasöründe <code>video_mockups</code> klasörü oluştur ve PSD'leri şu adlarla koy (sadece kullandıkların yeterli):</p>
+      <div class="tree">C:\etsyposter-main\video_mockups
+├─ single-vertical.psd   single-horizontal.psd   single-square.psd
+├─ duo-vertical.psd      duo-horizontal.psd      duo-square.psd
+└─ trio-vertical.psd     trio-horizontal.psd     trio-square.psd</div>
+      <table>
+        <tr><th>Tür</th><th>Smart object adları</th></tr>
+        <tr><td>Tekli</td><td><code>SMART_OBJECT</code></td></tr>
+        <tr><td>2'li</td><td><code>Left Frame</code>, <code>Right Frame</code></td></tr>
+        <tr><td>3'lü</td><td><code>Left Frame</code>, <code>Center Frame</code>, <code>Right Frame</code></td></tr>
+      </table>
+      <div class="note">Bir tür için video PSD'si yoksa kuyruk o ürünün videosunu atlar ve listing'i videosuz oluşturur; hata vermez.</div>
+    </section>
+
+    <!-- 11 -->
+    <section class="step" id="test" data-title="İlk ürün testi">
+      <div class="step-head"><div class="step-num">11</div><div><h2>İlk ürünle uçtan uca test</h2><p>Her şeyin bağlı olduğunu tek ürünle doğrula.</p></div><span class="time">10 dk</span></div>
+      <ol class="do">
+        <li><b>Yeni Ürün</b> → ürün türü <b>Tekli</b> → bir görsel sürükle.</li>
+        <li>Sağdaki <b>Üretim</b> panelinde tüm adımlar işaretli olsun → <b>1 ürünü kuyruğa ekle</b>.</li>
+        <li>Mockup şablonu seç → <b>Seç ve devam et</b>. Kuyrukta ilerlemeyi izle: Upscale → Export → Mockup → Video → AI SEO → Etsy.</li>
+        <li>Bittiğinde satırdaki <b>Etsy</b> bağlantısı taslak listing'i açar. Etsy'de kontrol et; taslaklar sen yayınlayana kadar mağazada görünmez.</li>
+      </ol>
+      <div class="tip">Panel içindeki <b>Kılavuz</b> sayfası günlük kullanımı (setler, kuyruk, SEO düzenleme, arama) ayrıntılı anlatır.</div>
+    </section>
+
+    <!-- 12 -->
+    <section class="step" id="guncelle" data-title="Güncelleme">
+      <div class="step-head"><div class="step-num">12</div><div><h2>Panel güncellemeleri</h2><p>Yeni sürüm yayınlandığında tek tıkla alınır.</p></div><span class="time">1–3 dk</span></div>
+      <ol class="do">
+        <li>Yeni sürüm varsa sol menüde <b>Ayarlar</b>'ın yanında altın renkli <b>Yeni</b> etiketi görünür.</li>
+        <li><b>Ayarlar → Güncelleme</b> bölümünde neyin değiştiğini görürsün → <b>Güncellemeyi al</b>.</li>
+        <li>Panel yalnızca <b>değişen dosyaları</b> indirir, kendini yeniden başlatır ve gerekiyorsa yeniden derler. Sayfa hazır olunca kendiliğinden yenilenir. Siyah <code>BASLAT.bat</code> penceresini bu sırada kapatma.</li>
+      </ol>
+      <div class="note"><b>Korunanlar:</b> ayarların (<code>.env.local</code>), ürünlerin (<code>public\workspace</code>), sabit görseller, <code>data</code> ve <code>video_mockups</code> güncellemede asla silinmez veya değiştirilmez.</div>
+      <div class="warn">Üretim kuyruğu çalışırken güncelleme başlatılamaz; kuyruk bitince tekrar dene. İlk kurulum GitHub'daki “Download ZIP” ile yapıldıysa ilk güncellemede bir kereliğine tam sürüm iner, sonrakiler sadece değişen dosyalardır.</div>
+    </section>
+
+    <!-- 13 -->
+    <section class="step" id="sorun" data-title="Sorun giderme">
+      <div class="step-head"><div class="step-num">13</div><div><h2>Sorun giderme</h2><p>Sık karşılaşılan durumlar.</p></div></div>
+      <table>
+        <tr><th>Belirti</th><th>Çözüm</th></tr>
+        <tr><td>“Node.js otomatik kurulamadı”</td><td><a href="#node-elle">Node.js'i elle kur</a> bölümündeki adımları yap, sonra <code>BASLAT.bat</code>.</td></tr>
+        <tr><td>“Paketler yüklenemedi”</td><td>İnternet bağlantısını kontrol et. Antivirüs <code>node_modules</code> klasörünü engelliyorsa izin ver, sonra <code>BASLAT.bat</code>'ı tekrar çalıştır.</td></tr>
+        <tr><td>Tarayıcı açılmıyor</td><td>Siyah pencere açıkken tarayıcıya elle <code>http://localhost:3000</code> yaz.</td></tr>
+        <tr><td>“Port 3000 kullanılıyor”</td><td>Pencere o programı kapatmak isteyip istemediğini sorar; <b>E</b> yazıp Enter. Emin değilsen bilgisayarı yeniden başlat.</td></tr>
+        <tr><td>“Photoshop bulunamadı”</td><td>Ayarlar → Photoshop &amp; Video → Photoshop.exe yolunu tam yaz.</td></tr>
+        <tr><td>Kuyruk bir adımda takılı kalıyor</td><td>Photoshop'ta açık bir onay penceresi var mı bak (script izni, eksik font, renk profili uyarısı). Pencereyi kapat. Takılan adım bir süre sonra zaman aşımına düşer, ürün “Hata” olur ve kuyruk sıradaki ürüne geçer; sonra <b>Tekrar dene</b> ile devam ettirebilirsin.</td></tr>
+        <tr><td>“Smart object sayısı uyuşmuyor”</td><td>Şablonun smart object sayısı ürün türüyle aynı olmalı (tekli 1, 2'li 2, 3'lü 3).</td></tr>
+        <tr><td>Video oluşmuyor</td><td><code>SAVE_VIDEO</code> action'ının <code>data\video-temp</code> klasörüne render ettiğinden emin ol.</td></tr>
+        <tr><td>Etsy “invalid redirect_uri”</td><td>Etsy uygulamasındaki Callback URL ile Ayarlar'daki Callback URL birebir aynı olmalı.</td></tr>
+        <tr><td>“OPENAI_API_KEY ayarlı değil”</td><td>Ayarlar → API Anahtarları'na anahtarı gir ya da Ayarlar → AI İçerik Üretimi'ni kapat.</td></tr>
+        <tr><td>Güncellemeden sonra panel açılmıyor</td><td>Siyah penceredeki mesajı oku. Pencereyi kapatıp <code>BASLAT.bat</code>'a tekrar çift tıkla; eksik kalan derleme kendiliğinden tamamlanır.</td></tr>
+        <tr><td>Sunucu yeniden başlayınca iş “yarıda kaldı”</td><td>Kuyrukta o satırdaki <b>Tekrar dene</b>'ye bas; kaldığı adımdan devam eder.</td></tr>
+      </table>
+    </section>
+
+    <footer>Poster Studio · Bu rehber internet bağlantısı olmadan da açılır. İlerleme işaretlerin yalnızca bu bilgisayarın tarayıcısında saklanır.</footer>
+  </main>
+</div>
+
+<script>
+(function () {
+  var KEY = "poster-studio-setup-progress";
+  var REFERENCE = { "sorun": true, "node-elle": true };
+  var steps = Array.prototype.slice.call(document.querySelectorAll("section.step"));
+  var toc = document.getElementById("toc");
+  var state = {};
+  try { state = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { state = {}; }
+
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+  steps.forEach(function (sec, i) {
+    var li = document.createElement("li");
+    var a = document.createElement("a");
+    a.href = "#" + sec.id;
+    var num = sec.querySelector(".step-num");
+    a.innerHTML = '<span class="n">' + (num ? num.textContent : i + 1) + "</span>";
+    a.appendChild(document.createTextNode(sec.getAttribute("data-title")));
+    li.appendChild(a);
+    toc.appendChild(li);
+
+    if (REFERENCE[sec.id]) return; // reference sections, nothing to tick
+    var label = document.createElement("label");
+    label.className = "done-toggle";
+    var box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = !!state[sec.id];
+    label.appendChild(box);
+    label.appendChild(document.createTextNode("Tamamladım"));
+    sec.appendChild(label);
+    box.addEventListener("change", function () {
+      state[sec.id] = box.checked;
+      save();
+      render();
+    });
+  });
+
+  function render() {
+    var total = 0, done = 0;
+    steps.forEach(function (sec, i) {
+      if (REFERENCE[sec.id]) return;
+      total++;
+      var isDone = !!state[sec.id];
+      if (isDone) done++;
+      sec.classList.toggle("is-done", isDone);
+      toc.children[i].firstChild.classList.toggle("done", isDone);
+    });
+    document.getElementById("bar").style.width = (total ? (done / total) * 100 : 0) + "%";
+    document.getElementById("progress-text").textContent = done + " / " + total + " adım tamamlandı";
+  }
+  render();
+
+  Array.prototype.forEach.call(document.querySelectorAll(".code button"), function (btn) {
+    btn.addEventListener("click", function () {
+      var text = btn.previousElementSibling.textContent;
+      function ok() { btn.textContent = "Kopyalandı"; setTimeout(function () { btn.textContent = "Kopyala"; }, 1500); }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(ok, function () { fallback(text); ok(); });
+      } else { fallback(text); ok(); }
+    });
+  });
+  function fallback(text) {
+    var ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+})();
+</script>
+</body>
+</html>

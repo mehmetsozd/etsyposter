@@ -1,0 +1,6 @@
+# Windows script files are stored byte-for-byte (CRLF) in the repo, so they
+# arrive intact through every channel: git clone, "Download ZIP", and the
+# panel's self-updater (which downloads raw files from GitHub).
+*.bat -text
+*.cmd -text
+*.ps1 -text

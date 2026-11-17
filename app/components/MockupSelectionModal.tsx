@@ -20,6 +20,10 @@ interface Props {
   error: string | null;
   onClose: () => void;
   onRender: (templateIds: string[]) => Promise<void>;
+  /** Overrides the header subtitle (e.g. "5 ürün için ortak seçim"). */
+  subtitle?: string;
+  /** Overrides the confirm button label. */
+  confirmLabel?: string;
 }
 
 export function MockupSelectionModal({
@@ -30,6 +34,8 @@ export function MockupSelectionModal({
   error,
   onClose,
   onRender,
+  subtitle,
+  confirmLabel,
 }: Props) {
   const orientation: Orientation =
     product.images[0]?.orientation ?? "square";
@@ -132,9 +138,9 @@ export function MockupSelectionModal({
               </div>
               <div
                 className="text-[10px] text-slate-400 font-mono truncate mt-0.5"
-                title={product.id}
+                title={subtitle ?? product.id}
               >
-                {product.id}
+                {subtitle ?? product.id}
               </div>
             </div>
           </div>
@@ -284,7 +290,9 @@ export function MockupSelectionModal({
                     <polygon points="5 3 19 12 5 21 5 3" />
                   </svg>
                   {selected.size > 0
-                    ? `${selected.size} mockup render et`
+                    ? confirmLabel
+                      ? `${confirmLabel} (${selected.size})`
+                      : `${selected.size} mockup render et`
                     : "Mockup seç"}
                 </>
               )}

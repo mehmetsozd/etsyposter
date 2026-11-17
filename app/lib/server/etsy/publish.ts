@@ -25,10 +25,19 @@ import {
   type PriceTable,
 } from "../../pricing-defaults";
 import type { Orientation, ProductMeta, ProductType } from "../../types";
+import {
+  generateListingContent,
+  isAiSeoEnabled,
+  readListingContent,
+  TAG_MAX_COUNT,
+  TAG_MAX_LENGTH,
+  TITLE_MAX_LENGTH,
+} from "../listingContent";
 
 const MAX_LISTING_IMAGES = 20;
 const SKU_MAX_LENGTH = 32;
 const MAX_MATERIALS = 13;
+const ALT_TEXT_MAX_LENGTH = 500;
 
 export interface PublishResult {
   listingId: number;
@@ -145,6 +154,7 @@ interface CreateDraftPayload {
   quantity: number;
   title: string;
   description: string;
+  tags: string[];
   price: number;
   who_made: string;
   when_made: string;
@@ -159,8 +169,60 @@ interface CreateDraftPayload {
   state: string;
 }
 
-function buildCreateDraftPayload(opts: {
+interface ResolvedContent {
   title: string;
+  description: string;
+  altText: string;
+  tags: string[];
+}
+
+/**
+ * Title, description, alt text and tags come from the SEO step. A product that
+ * has never been through it is generated here rather than refused; existing
+ * copy is reused as it stands, so manual edits made before publishing stick.
+ * The shop's fixed block (ETSY_DESCRIPTION) is appended under the AI paragraph.
+ */
+async function resolveListingContent(
+  workspaceId: string,
+  productId: string
+): Promise<ResolvedContent> {
+  let listing = await readListingContent(workspaceId, productId);
+  if (!listing?.title || !listing.description) {
+    if (!isAiSeoEnabled()) {
+      throw new Error(
+        "Bu ürünün title/açıklaması yok ve AI içerik üretimi kapalı. Tamamlanan Ürünler → SEO'dan elle gir ya da Ayarlar'dan AI'ı aç."
+      );
+    }
+    listing = await generateListingContent(workspaceId, productId);
+  }
+
+  const title = listing.title.trim();
+  if (!title) throw new Error("Başlık boş — SEO içeriği üretilmemiş.");
+  if (title.length > TITLE_MAX_LENGTH) {
+    throw new Error(
+      `Başlık ${title.length} karakter; Etsy en fazla ${TITLE_MAX_LENGTH} kabul ediyor.`
+    );
+  }
+  const tags = listing.tags
+    .map((t) => String(t).trim())
+    .filter(Boolean)
+    .slice(0, TAG_MAX_COUNT);
+  const longTag = tags.find((t) => t.length > TAG_MAX_LENGTH);
+  if (longTag) {
+    throw new Error(`"${longTag}" tagı ${TAG_MAX_LENGTH} karakterden uzun; Etsy kabul etmiyor.`);
+  }
+
+  const shopBlock = strEnv("ETSY_DESCRIPTION", DEFAULT_ETSY_DESCRIPTION).trim();
+  return {
+    title,
+    description: [listing.description.trim(), shopBlock].filter(Boolean).join("\n\n"),
+    altText: listing.altText.slice(0, ALT_TEXT_MAX_LENGTH),
+    tags,
+  };
+}
+
+function buildCreateDraftPayload(opts: {
+  content: ResolvedContent;
   basePrice: number;
 }): CreateDraftPayload {
   const quantity = intEnv("ETSY_DEFAULT_QUANTITY", DEFAULT_ETSY_DEFAULT_QUANTITY);
@@ -173,11 +235,11 @@ function buildCreateDraftPayload(opts: {
     DEFAULT_ETSY_MATERIALS,
     MAX_MATERIALS
   );
-  const description = strEnv("ETSY_DESCRIPTION", DEFAULT_ETSY_DESCRIPTION);
   return {
     quantity,
-    title: opts.title,
-    description,
+    title: opts.content.title,
+    description: opts.content.description,
+    tags: opts.content.tags,
     price: opts.basePrice,
     who_made: "i_did",
     when_made: "made_to_order",
@@ -245,13 +307,17 @@ function buildAttributeAttempts(product: ProductMeta): PropertyAttempt[] {
       duo: { env: "ETSY_PROPERTY_PIECES_VALUE_TWO", label: "2" },
       trio: { env: "ETSY_PROPERTY_PIECES_VALUE_THREE", label: "3" },
     };
+    // Sets use their own value when configured; otherwise "1" like
+    // poster-otomasyon (ETSY_PROPERTY_PIECES_VALUE_ONE is the documented default).
     const target = pieceMap[product.type];
-    const valueId = optIntEnv(target.env);
+    const ownId = optIntEnv(target.env);
+    const valueId = ownId ?? optIntEnv(pieceMap.single.env);
+    const label = ownId ? target.label : pieceMap.single.label;
     if (valueId) {
       out.push({
         name: "Pieces",
         propertyId: piecesId,
-        body: { value_ids: [valueId], values: [target.label] },
+        body: { value_ids: [valueId], values: [label] },
       });
     }
   }
@@ -327,7 +393,8 @@ async function uploadListingImage(
   shopId: string,
   listingId: number,
   absolutePath: string,
-  rank: number
+  rank: number,
+  altText = ""
 ) {
   const buffer = await fs.readFile(absolutePath);
   const blob = new Blob([new Uint8Array(buffer)], {
@@ -336,7 +403,7 @@ async function uploadListingImage(
   const form = new FormData();
   form.append("image", blob, path.basename(absolutePath));
   form.append("rank", String(rank));
-  form.append("alt_text", "");
+  form.append("alt_text", altText);
   form.append("overwrite", "true");
   await etsyPostMultipart(
     `/v3/application/shops/${shopId}/listings/${listingId}/images`,
@@ -470,10 +537,15 @@ export async function publishProductToEtsy(
   validatePriceMatrix(table, priceKey);
   const basePrice = computeBasePrice(table, priceKey);
 
-  // 4) Shop + create draft
+  // 4) SEO content (generated now if the SEO step was skipped)
+  const content = await resolveListingContent(input.workspaceId, input.productId);
+  if (input.title && input.title.trim()) {
+    content.title = input.title.trim().slice(0, TITLE_MAX_LENGTH);
+  }
+
+  // 5) Shop + create draft
   const shopId = await resolveShopId();
-  const title = (input.title || "Untitled").slice(0, 140);
-  const payload = buildCreateDraftPayload({ title, basePrice });
+  const payload = buildCreateDraftPayload({ content, basePrice });
   const created = await etsyPost<{ listing_id: number; url?: string | null }>(
     `/v3/application/shops/${shopId}/listings`,
     payload
@@ -497,7 +569,13 @@ export async function publishProductToEtsy(
   let uploadedImages = 0;
   for (let i = 0; i < mockupsToUpload.length; i++) {
     try {
-      await uploadListingImage(shopId, listingId, mockupsToUpload[i], i + 1);
+      await uploadListingImage(
+        shopId,
+        listingId,
+        mockupsToUpload[i],
+        i + 1,
+        content.altText
+      );
       uploadedImages += 1;
     } catch (e) {
       console.warn(`[etsy-publish] mockup upload failed rank=${i + 1}:`, e);

@@ -47,13 +47,13 @@ export function Dropzone({ productType, onFiles }: Props) {
   };
 
   return (
-    <section className="mt-6">
+    <section>
       <div
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => inputRef.current?.click()}
-        className={`group relative cursor-pointer rounded-2xl border-2 border-dashed transition-all px-6 py-12 text-center ${
+        className={`group relative cursor-pointer rounded-2xl border-2 border-dashed transition-all px-6 py-10 text-center ${
           isDragging
             ? "border-brand-500 bg-brand-50 dropzone-active"
             : "border-slate-300 bg-white hover:border-brand-400 hover:bg-brand-50/40"

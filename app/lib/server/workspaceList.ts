@@ -13,6 +13,7 @@ const STEP_DIRS: Record<ActionStepKey, keyof ReturnType<typeof productSubdirs>> 
   export: "exports",
   mockup: "mockups",
   video: "videos",
+  seo: "seo",
 };
 
 async function listFilesRecursive(dir: string): Promise<string[]> {

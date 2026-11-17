@@ -1,21 +1,19 @@
 # Windows Kurulum
 
-## İlk kurulum (bir defa yapılır)
+> **Adım adım, sıfırdan kurulum anlatımı için `KURULUM_REHBERI.html` dosyasına çift tıkla.** Bu dosya kısa özet olarak kalıyor.
 
-1. Proje klasörünü Windows bilgisayara kopyala (USB / network / git clone).
-2. **`KURULUM.bat`** dosyasına çift tıkla.
-   - Node.js yüklü değilse otomatik kurar (winget üzerinden).
-   - `npm install` ile bağımlılıkları yükler.
-   - `npm run build` ile production build üretir.
-   - `.env.example`'dan `.env.local` oluşturur.
-3. Eğer ekranda "Node.js yüklendi, pencereyi kapatıp tekrar çalıştırın" yazarsa, terminali kapatıp `KURULUM.bat`'a bir daha çift tıkla — bu sefer kurulum tamamlanır.
+## İlk kurulum ve günlük kullanım
 
-## Günlük kullanım
+1. <https://github.com/mehmetsozd/etsyposter/archive/refs/heads/main.zip> adresinden indir, zip'e sağ tık → Özellikler → "Engellemeyi kaldır", sonra `C:\` içine ayıkla (`C:\etsyposter-main`; OneDrive/Masaüstü değil).
+2. **`BASLAT.bat`** dosyasına çift tıkla. İlk açılışta kendisi:
+   - Node.js yoksa winget ile kurar; kuramazsa elle kurulum adımlarını gösterir ve `KURULUM_REHBERI.html#node-elle` bölümünü açar,
+   - `.env.local` dosyasını `.env.example`'dan oluşturur, `video_mockups` ve `data\video-temp` klasörlerini açar,
+   - paketleri yükler (`npm install`) ve paneli derler (`next build`),
+   - sunucuyu başlatır ve paneli **Google Chrome**'da açar (Chrome yoksa varsayılan tarayıcı).
+3. Sonraki açılışlarda yalnızca değişen şeyler yeniden yapılır; panel birkaç saniyede açılır.
+4. Kapatmak için siyah pencereyi kapat ya da `Ctrl+C`.
 
-- **`BASLAT.bat`** dosyasına çift tıkla.
-  - Sunucu arka planda başlar.
-  - Hazır olunca varsayılan tarayıcıda `http://localhost:3000` otomatik açılır.
-- Uygulamayı kapatmak için terminal penceresinde `Ctrl+C` bas, sonra `Y` yaz.
+`KURULUM.bat` isteğe bağlıdır: paneli açmadan sadece kurulum + derleme yapar. İkisi de aynı betiği kullanır: `scripts\panel.ps1`.
 
 ## Photoshop ayarları
 
@@ -53,7 +51,6 @@ PHOTOSHOP_VIDEO_ACTION="SAVE_VIDEO"
 
 ## Sık karşılaşılan sorunlar
 
-- **"winget komutu bulunamadı"** → Windows 10 (eski sürüm) kullanıyorsun. Node.js LTS'yi manuel kur: <https://nodejs.org/>
-- **"Production build bulunamadı"** → Önce `KURULUM.bat`'ı çalıştır.
+- **"Node.js otomatik kurulamadı"** → `KURULUM_REHBERI.html` → "Node.js'i elle kur" bölümü. Kurduktan sonra `BASLAT.bat`.
 - **Tarayıcı açılmıyor** → Sunucu hazırken `http://localhost:3000` adresini manuel olarak tarayıcıda aç.
-- **Port 3000 dolu** → Başka bir uygulama 3000 portunu kullanıyor. O uygulamayı kapat veya `package.json`'da port'u değiştir.
+- **Port 3000 dolu** → `BASLAT.bat` portu tutan programı gösterir ve kapatmak için onay ister. Port değiştirilemez; Etsy callback adresi 3000'e bağlı.

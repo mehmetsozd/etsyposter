@@ -231,7 +231,7 @@ export function EtsyListingConfigSection({ connected, onToast }: Props) {
       <div className="mb-4">
         <div className="flex items-baseline justify-between mb-1">
           <label className="text-sm font-semibold text-slate-900">
-            Description (Sabit Metin)
+            Description — sabit alt kısım
           </label>
           <div className="flex items-center gap-2">
             <button
@@ -249,8 +249,10 @@ export function EtsyListingConfigSection({ connected, onToast }: Props) {
           </div>
         </div>
         <p className="text-xs text-slate-500 mb-2">
-          Her listing&apos;in altına aynen eklenir. Boyut listesi, üretim &amp;
-          shipping bilgileri vs.
+          AI&apos;ın ürettiği ürün paragrafı ve &quot;Perfect For&quot;
+          maddelerinin altına her listing&apos;de aynen eklenir (boyutlar,
+          üretim, kargo, notlar). AI kapalıysa elle girdiğin açıklamanın altına
+          eklenir.
         </p>
         <textarea
           value={value("ETSY_DESCRIPTION")}

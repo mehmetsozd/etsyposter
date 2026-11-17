@@ -47,7 +47,20 @@ export const ORIENTATION_META: Record<
   square: { label: "Square", icon: "▢" },
 };
 
-export type ActionStepKey = "upscale" | "export" | "mockup" | "video";
+export type ActionStepKey = "upscale" | "export" | "mockup" | "video" | "seo";
+
+/** AI-generated Etsy listing copy, stored at `<product>/seo/listing.json`. */
+export interface ListingContent {
+  title: string;
+  /** Product paragraph + "Perfect For" bullets; the shop's fixed block is appended at publish. */
+  description: string;
+  altText: string;
+  tags: string[];
+  generatedAt: string;
+  model: string | null;
+  /** Hard limits still broken after the fix-up round (empty when clean). */
+  remainingIssues: string[];
+}
 
 export interface ImageMeta {
   index: number;
@@ -61,6 +74,8 @@ export interface ImageMeta {
 export interface ProductMeta {
   id: string;
   type: ProductType;
+  /** Etsy title from the SEO step — kept on the product for search. */
+  title?: string;
   createdAt: string;
   images: ImageMeta[];
 }

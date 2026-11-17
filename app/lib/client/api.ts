@@ -1,4 +1,5 @@
 import type {
+  ListingContent,
   MockupCategory,
   MockupTemplatesIndex,
   OrientationTemplates,
@@ -16,13 +17,15 @@ export interface UpscaleResponse {
 
 export async function runUpscaleUpload(
   products: Product[],
-  workspaceId: string | null
+  workspaceId: string | null,
+  opts: { stageOnly?: boolean } = {}
 ): Promise<UpscaleResponse> {
   const form = new FormData();
 
   const meta = {
     mode: "upload" as const,
     workspaceId,
+    stageOnly: opts.stageOnly ?? false,
     products: products.map((product) => ({
       productId: product.id,
       type: product.type,
@@ -79,7 +82,7 @@ export interface ExportResponse {
   workspaceId: string;
   products: {
     productId: string;
-    images: { index: number; jpgUrls: string[]; pdfUrl: string }[];
+    images: { index: number; jpgUrls: string[]; pdfUrls: string[] }[];
   }[];
 }
 
@@ -283,4 +286,120 @@ export async function deleteWorkspace(workspaceId: string): Promise<void> {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body.error || `Silme başarısız (${res.status})`);
   }
+}
+
+export async function runSeo(
+  workspaceId: string,
+  productIds?: string[]
+): Promise<{ products: { productId: string; listing: ListingContent }[] }> {
+  const res = await fetch("/api/actions/seo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspaceId, productIds }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || `SEO üretimi başarısız (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function getSeo(
+  workspaceId: string,
+  productId: string
+): Promise<{ listing: ListingContent | null; aiEnabled: boolean }> {
+  const qs = new URLSearchParams({ workspaceId, productId });
+  const res = await fetch(`/api/actions/seo?${qs}`, { cache: "no-store" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || `SEO içeriği alınamadı (${res.status})`);
+  }
+  const data = await res.json();
+  return {
+    listing: (data.listing ?? null) as ListingContent | null,
+    aiEnabled: data.aiEnabled !== false,
+  };
+}
+
+export async function saveSeo(
+  workspaceId: string,
+  productId: string,
+  edits: { title: string; description: string; altText: string; tags: string[] }
+): Promise<ListingContent> {
+  const res = await fetch("/api/actions/seo", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspaceId, productId, ...edits }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || `SEO içeriği kaydedilemedi (${res.status})`);
+  }
+  return (await res.json()).listing as ListingContent;
+}
+
+// ── Production queue ─────────────────────────────────────────────────────
+
+export type QueueStep = "upscale" | "export" | "mockup" | "video" | "seo" | "publish";
+
+export interface QueueJob {
+  id: string;
+  workspaceId: string;
+  productId: string;
+  productType: "single" | "duo" | "trio";
+  thumbUrls: string[];
+  steps: QueueStep[];
+  templateIds: string[];
+  status: "queued" | "running" | "done" | "error" | "cancelled";
+  currentStep: QueueStep | null;
+  completedSteps: QueueStep[];
+  warnings: string[];
+  error: string | null;
+  listingUrl: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface QueueSnapshot {
+  jobs: QueueJob[];
+  working: boolean;
+}
+
+export async function getQueue(): Promise<QueueSnapshot> {
+  const res = await fetch("/api/queue", { cache: "no-store" });
+  if (!res.ok) throw new Error("Kuyruk alınamadı");
+  return res.json();
+}
+
+export async function enqueueProducts(input: {
+  workspaceId: string;
+  steps: QueueStep[];
+  products: { productId: string; templateIds: string[] }[];
+}): Promise<void> {
+  const res = await fetch("/api/queue", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || `Kuyruğa eklenemedi (${res.status})`);
+  }
+}
+
+export async function queueAction(
+  action: "cancel" | "retry" | "clear",
+  id?: string
+): Promise<QueueSnapshot> {
+  const res = await fetch("/api/queue", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, id }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || `İşlem başarısız (${res.status})`);
+  }
+  return res.json();
 }

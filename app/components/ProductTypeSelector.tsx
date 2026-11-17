@@ -12,10 +12,7 @@ const ORDER: ProductType[] = ["single", "duo", "trio"];
 export function ProductTypeSelector({ value, onChange }: Props) {
   return (
     <section>
-      <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-        Ürün Türü
-      </label>
-      <div className="mt-3 grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {ORDER.map((type) => {
           const meta = PRODUCT_TYPE_META[type];
           const selected = value === type;

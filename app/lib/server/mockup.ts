@@ -4,6 +4,7 @@ import {
   ensureProductDirs,
   fileExists,
   readWorkspaceMeta,
+  resolveProductImagePaths,
   safeFilename,
 } from "./workspace";
 import {
@@ -13,6 +14,63 @@ import {
 } from "./photoshop";
 import { getTemplateById } from "./mockupTemplates";
 import { toPublicUrl } from "./paths";
+import type { SmartObjectInfo } from "../types";
+
+// Same convention as poster-otomasyon and the video PSDs: artwork[i] goes into
+// slot[i], where slots are named left→right.
+const SET_SLOT_NAMES: Record<number, string[]> = {
+  2: ["Left Frame", "Right Frame"],
+  3: ["Left Frame", "Center Frame", "Right Frame"],
+};
+
+export interface SmartObjectSlot {
+  name: string;
+  /** 0-based index among same-named smart objects, in layer-tree order. */
+  occurrence: number;
+}
+
+/**
+ * Returns smart objects in slot order (slot i receives product image i).
+ *  - Single: the one smart object.
+ *  - Sets: if the PSD uses the "Left Frame / Center Frame / Right Frame"
+ *    convention, that order is used verbatim. Otherwise the smart objects are
+ *    ordered by their on-canvas position — left→right by horizontal centre,
+ *    top→bottom for frames stacked in the same column — so the layer panel
+ *    order never decides which artwork lands where.
+ * `occurrence` keeps PSDs whose frames share one layer name (e.g. three
+ * "Change Poster" layers) addressable one by one.
+ */
+export function orderSmartObjectSlots(
+  smartObjects: SmartObjectInfo[]
+): SmartObjectSlot[] {
+  const seen = new Map<string, number>();
+  const slots = smartObjects.map((so) => {
+    const occurrence = seen.get(so.name) ?? 0;
+    seen.set(so.name, occurrence + 1);
+    return { so, slot: { name: so.name, occurrence } };
+  });
+  if (slots.length <= 1) return slots.map((s) => s.slot);
+
+  const convention = SET_SLOT_NAMES[slots.length];
+  if (convention) {
+    const byLower = new Map(
+      slots.map((s) => [s.so.name.trim().toLowerCase(), s.slot])
+    );
+    const matched = convention.map((n) => byLower.get(n.toLowerCase()));
+    if (matched.every((s): s is SmartObjectSlot => Boolean(s))) return matched;
+  }
+
+  const width = Math.max(...smartObjects.map((so) => so.right)) || 1;
+  const sameColumn = width * 0.05;
+  return [...slots]
+    .sort((a, b) => {
+      const ax = (a.so.left + a.so.right) / 2;
+      const bx = (b.so.left + b.so.right) / 2;
+      if (Math.abs(ax - bx) > sameColumn) return ax - bx;
+      return (a.so.top + a.so.bottom) / 2 - (b.so.top + b.so.bottom) / 2;
+    })
+    .map((s) => s.slot);
+}
 
 export interface MockupRenderResult {
   templateId: string;
@@ -23,8 +81,9 @@ export interface MockupRenderResult {
 /**
  * Renders a list of mockup templates for a product. For each template:
  *   1. Opens its PSD in Photoshop.
- *   2. Walks the layer tree in DOM order and replaces each smart object's
- *      contents with the next product image (upscaled if present, else original).
+ *   2. Replaces each smart object's contents with the matching product image
+ *      (upscaled if present, else original). Slot order comes from
+ *      `orderSmartObjectSlots` — image 1 → left-most frame, and so on.
  *   3. Stretches the replaced smart object back to the original bounds
  *      (non-uniform — matches user's intent: "sıkıştırma").
  *   4. Saves the canvas as JPG quality 12 to `<product>/mockups/`.
@@ -47,31 +106,11 @@ export async function renderMockups(params: {
 
   const dirs = await ensureProductDirs(params.workspaceId, params.productId);
 
-  // Resolve each product image: upscaled if exists, else original.
-  const sourceImages: string[] = [];
-  for (const img of product.images) {
-    const idxLabel = String(img.index + 1).padStart(2, "0");
-    const baseNoExt = img.filename.replace(/\.[^.]+$/, "");
-    const upscaledCandidates = [
-      path.join(dirs.upscaled, `${idxLabel}-${baseNoExt}.jpg`),
-      path.join(dirs.upscaled, `${baseNoExt}.jpg`),
-    ];
-    let resolved: string | null = null;
-    for (const c of upscaledCandidates) {
-      if (await fileExists(c)) {
-        resolved = c;
-        break;
-      }
-    }
-    if (!resolved) {
-      const original = path.join(dirs.original, img.filename);
-      if (!(await fileExists(original))) {
-        throw new Error(`Görsel bulunamadı: ${img.filename}`);
-      }
-      resolved = original;
-    }
-    sourceImages.push(resolved);
-  }
+  // Product image order = upload order = left→right slot order for sets.
+  const sourceImages = await resolveProductImagePaths(
+    params.workspaceId,
+    product
+  );
 
   const results: MockupRenderResult[] = [];
 
@@ -103,7 +142,7 @@ export async function renderMockups(params: {
       psdPath: template.psdPath,
       outputPath,
       sourceImages,
-      smartObjectNames: template.smartObjects.map((so) => so.name),
+      slots: orderSmartObjectSlots(template.smartObjects),
       donePath,
     });
 
@@ -130,19 +169,19 @@ function buildMockupJsx({
   psdPath,
   outputPath,
   sourceImages,
-  smartObjectNames,
+  slots,
   donePath,
 }: {
   psdPath: string;
   outputPath: string;
   sourceImages: string[];
-  smartObjectNames: string[];
+  slots: SmartObjectSlot[];
   donePath: string;
 }): string {
   const pairsJs = sourceImages
     .map(
       (p, i) =>
-        `  { artworkPath: ${jsxStr(p)}, smartObjectName: ${jsxStr(smartObjectNames[i] ?? "")} }`
+        `  { artworkPath: ${jsxStr(p)}, smartObjectName: ${jsxStr(slots[i]?.name ?? "")}, occurrence: ${slots[i]?.occurrence ?? 0} }`
     )
     .join(",\n");
   return `
@@ -154,22 +193,27 @@ ${pairsJs}
   ]
 };
 
-function findSmartObjectByName(container, name) {
-  // Only return smart-object layers. Plain layers or LayerSets sharing the
-  // target name would fail silently under placedLayerEditContents and cause
-  // the subsequent paste to land on the mockup canvas instead.
+function collectSmartObjectsByName(container, name, out) {
+  // Only smart-object layers. Plain layers or LayerSets sharing the target
+  // name would fail silently under placedLayerEditContents and cause the
+  // subsequent paste to land on the mockup canvas instead. Traversal order
+  // matches the template scan, so "occurrence" lines up with it.
   for (var i = 0; i < container.layers.length; i++) {
     var layer = container.layers[i];
-    if (layer.typename === "LayerSet") {
-      var found = findSmartObjectByName(layer, name);
-      if (found) return found;
-      continue;
-    }
-    if (layer.name === name && layer.kind === LayerKind.SMARTOBJECT) {
-      return layer;
-    }
+    try {
+      if (layer.typename === "LayerSet") {
+        collectSmartObjectsByName(layer, name, out);
+      } else if (layer.name === name && layer.kind === LayerKind.SMARTOBJECT) {
+        out.push(layer);
+      }
+    } catch (e) {}
   }
-  return null;
+  return out;
+}
+
+function findSmartObjectByName(container, name, occurrence) {
+  var matches = collectSmartObjectsByName(container, name, []);
+  return matches.length > occurrence ? matches[occurrence] : null;
 }
 
 function ensureUnlocked(layer, doc) {
@@ -241,7 +285,7 @@ var mockupDoc = app.open(new File(CONFIG.mockupPath));
 
 for (var pIdx = 0; pIdx < CONFIG.pairs.length; pIdx++) {
   var pair = CONFIG.pairs[pIdx];
-  var smartLayer = findSmartObjectByName(mockupDoc, pair.smartObjectName);
+  var smartLayer = findSmartObjectByName(mockupDoc, pair.smartObjectName, pair.occurrence);
   if (!smartLayer) {
     throw new Error("Smart object bulunamadı (smart-object layer beklendi): " + pair.smartObjectName);
   }

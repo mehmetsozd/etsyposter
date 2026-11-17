@@ -1,9 +1,124 @@
 "use client";
 
-import Link from "next/link";
+import { Sidebar } from "../components/Sidebar";
+import { UpdateSection } from "../components/UpdateSection";
 import { useCallback, useEffect, useState } from "react";
 import { EtsyStaticMockupsSection } from "../components/EtsyStaticMockupsSection";
 import { EtsyListingConfigSection } from "../components/EtsyListingConfigSection";
+import {
+  EnvSettingsSection,
+  type EnvField,
+} from "../components/EnvSettingsSection";
+
+const CREDENTIAL_FIELDS: EnvField[] = [
+  {
+    key: "ETSY_KEYSTRING",
+    label: "Etsy Keystring",
+    helper:
+      "Etsy Developer → Your Apps sayfasındaki KEYSTRING (client_id).",
+  },
+  {
+    key: "ETSY_SHARED_SECRET",
+    label: "Etsy Shared Secret",
+    helper: "Aynı sayfadaki SHARED SECRET. Kaydedildikten sonra gösterilmez.",
+    secret: true,
+  },
+  {
+    key: "ETSY_REDIRECT_URI",
+    label: "Etsy Callback URL",
+    helper:
+      "Etsy uygulamandaki Callback URL ile birebir aynı olmalı.",
+    placeholder: "http://localhost:3000/etsy/oauth2callback",
+  },
+  {
+    key: "OPENAI_API_KEY",
+    label: "OpenAI API Key",
+    helper:
+      "SEO (title, description, alt text, 13 tag) üretimi için. Kaydedildikten sonra gösterilmez.",
+    secret: true,
+  },
+  {
+    key: "OPENAI_MODEL",
+    label: "OpenAI Model",
+    helper: "Boş bırakılırsa gpt-5.4-mini kullanılır.",
+    placeholder: "gpt-5.4-mini",
+  },
+];
+
+const AI_FIELDS: EnvField[] = [
+  {
+    key: "AI_SEO_ENABLED",
+    label: "Otomatik title / açıklama / tag / alt text üretimi",
+    helper:
+      "Açıkken kuyruktaki SEO adımı ve Etsy'ye gönderim, içeriği OpenAI ile üretir. Kapalıyken SEO adımı atlanır; içeriği Tamamlanan Ürünler → SEO'dan elle girersin.",
+    toggle: { defaultOn: true },
+  },
+];
+
+const PHOTOSHOP_FIELDS: EnvField[] = [
+  {
+    key: "PHOTOSHOP_APP_NAME",
+    label: "Photoshop uygulama adı (macOS)",
+    helper: "Applications altındaki ad, ör. Adobe Photoshop 2026.",
+    placeholder: "Adobe Photoshop 2026",
+  },
+  {
+    key: "PHOTOSHOP_APP_PATH",
+    label: "Photoshop.exe yolu (Windows)",
+    helper: "Boşsa bilinen kurulum konumlarında otomatik aranır.",
+  },
+  {
+    key: "PHOTOSHOP_ACTION_SET",
+    label: "Action set",
+    helper: "Upscale action'ının bulunduğu set.",
+    placeholder: "EtsyAutomation",
+  },
+  {
+    key: "PHOTOSHOP_UPSCALE_ACTION",
+    label: "Upscale action",
+    helper: "Tüm yönler için varsayılan upscale action'ı.",
+    placeholder: "Upscale",
+  },
+  {
+    key: "PHOTOSHOP_UPSCALE_ACTION_VERTICAL",
+    label: "Upscale action — Vertical (opsiyonel)",
+    helper: "Boşsa varsayılan upscale action'ı kullanılır.",
+  },
+  {
+    key: "PHOTOSHOP_UPSCALE_ACTION_HORIZONTAL",
+    label: "Upscale action — Horizontal (opsiyonel)",
+    helper: "Boşsa varsayılan upscale action'ı kullanılır.",
+  },
+  {
+    key: "PHOTOSHOP_UPSCALE_ACTION_SQUARE",
+    label: "Upscale action — Square (opsiyonel)",
+    helper: "Boşsa varsayılan upscale action'ı kullanılır.",
+  },
+  {
+    key: "VIDEO_MOCKUPS_DIR",
+    label: "Video mockup klasörü",
+    helper:
+      "single-vertical.psd, duo-vertical.psd, trio-vertical.psd … dosyalarının olduğu klasör.",
+    placeholder: "video_mockups",
+  },
+  {
+    key: "PHOTOSHOP_VIDEO_TEMP_DIR",
+    label: "Video temp klasörü",
+    helper: "SAVE_VIDEO action'ının videoyu yazdığı klasör.",
+    placeholder: "data/video-temp",
+  },
+  {
+    key: "PHOTOSHOP_VIDEO_ACTION_SET",
+    label: "Video action set",
+    helper: "Boşsa yukarıdaki action set kullanılır.",
+  },
+  {
+    key: "PHOTOSHOP_VIDEO_ACTION",
+    label: "Video action",
+    helper: "Videoyu kaydeden action.",
+    placeholder: "SAVE_VIDEO",
+  },
+];
 
 interface SettingsMap {
   ETSY_SHOP_ID: string;
@@ -237,39 +352,8 @@ export default function AyarlarPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-700 to-slate-900 flex items-center justify-center shadow-sm">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="white"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="w-5 h-5"
-              >
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-            </div>
-            <div className="leading-tight">
-              <h1 className="text-[15px] font-semibold text-slate-900">
-                Ayarlar
-              </h1>
-              <p className="text-xs text-slate-500">Etsy & sistem yapılandırması</p>
-            </div>
-          </div>
-          <Link
-            href="/"
-            className="text-sm text-slate-600 hover:text-slate-900 px-3 h-9 rounded-lg hover:bg-slate-100 inline-flex items-center"
-          >
-            ← Ana Sayfa
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-screen lg:pl-64">
+      <Sidebar active="settings" />
 
       {/* Toast */}
       {toast && (
@@ -278,7 +362,19 @@ export default function AyarlarPage() {
         </div>
       )}
 
-      <main className="max-w-5xl mx-auto px-6 py-8 space-y-6">
+      <main className="mx-auto max-w-4xl px-5 sm:px-8 pb-24 pt-8 lg:pt-12 space-y-6">
+        <header className="mb-2">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-600">
+            Poster Studio
+          </div>
+          <h1 className="mt-1.5 text-[28px] leading-tight font-semibold tracking-tight text-brand-900">
+            Ayarlar
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Etsy bağlantısı, API anahtarları, listing ve Photoshop yapılandırması.
+          </p>
+        </header>
+
         {error && (
           <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             {error}
@@ -331,12 +427,10 @@ export default function AyarlarPage() {
               )}
               {status && !status.keystringConfigured && (
                 <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  <span className="font-semibold">ETSY_KEYSTRING</span> ve{" "}
-                  <span className="font-semibold">ETSY_SHARED_SECRET</span>{" "}
-                  ayarlanmamış. Bunlar güvenlik nedeniyle UI&apos;dan
-                  ayarlanamaz; <code className="font-mono">.env.local</code>{" "}
-                  dosyasına Etsy Developer dashboard&apos;daki değerleri
-                  yapıştır ve sunucuyu yeniden başlat.
+                  Etsy&apos;ye bağlanmak için önce aşağıdaki{" "}
+                  <span className="font-semibold">API Anahtarları</span>{" "}
+                  bölümüne Etsy Keystring ve Shared Secret değerlerini girip
+                  kaydet.
                 </div>
               )}
               {shopError && status?.connected && (
@@ -367,6 +461,16 @@ export default function AyarlarPage() {
             </div>
           </div>
         </section>
+
+        <UpdateSection />
+
+        <EnvSettingsSection
+          title="API Anahtarları"
+          subtitle="Etsy uygulama bilgileri ve OpenAI anahtarı. Kaydedince hemen geçerli olur."
+          fields={CREDENTIAL_FIELDS}
+          onToast={showToast}
+          onSaved={() => void fetchStatus()}
+        />
 
         {status?.connected && (
           <>
@@ -476,15 +580,6 @@ export default function AyarlarPage() {
               </div>
             </section>
 
-            {/* Listing içeriği: description, materials, quantity, property ID'leri */}
-            <EtsyListingConfigSection
-              connected={status?.connected ?? false}
-              onToast={showToast}
-            />
-
-            {/* Etsy Sabit Görseller — her listing'e otomatik eklenir */}
-            <EtsyStaticMockupsSection onToast={showToast} />
-
             {/* Auto-saved değerler */}
             <section className="rounded-2xl border border-slate-200 bg-white p-5">
               <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">
@@ -505,6 +600,27 @@ export default function AyarlarPage() {
             </section>
           </>
         )}
+
+        <EnvSettingsSection
+          title="AI İçerik Üretimi"
+          subtitle="OpenAI yalnızca açıklamanın üst kısmını (ürün paragrafı + Perfect For) üretir; alttaki sabit metin aşağıdaki Description alanından gelir."
+          fields={AI_FIELDS}
+          onToast={showToast}
+        />
+
+        {/* Listing içeriği + her ürüne giden sabit görseller — Etsy bağlantısından bağımsız düzenlenebilir */}
+        <EtsyListingConfigSection
+          connected={status?.connected ?? false}
+          onToast={showToast}
+        />
+        <EtsyStaticMockupsSection onToast={showToast} />
+
+        <EnvSettingsSection
+          title="Photoshop & Video"
+          subtitle="Upscale, export, mockup ve video adımlarının kullandığı Photoshop ayarları."
+          fields={PHOTOSHOP_FIELDS}
+          onToast={showToast}
+        />
       </main>
 
       <style jsx>{`

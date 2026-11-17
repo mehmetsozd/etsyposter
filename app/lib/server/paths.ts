@@ -19,6 +19,7 @@ export interface ProductSubdirs {
   exports: string;
   mockups: string;
   videos: string;
+  seo: string;
   temp: string;
 }
 
@@ -34,6 +35,7 @@ export function productSubdirs(
     exports: path.join(root, "exports"),
     mockups: path.join(root, "mockups"),
     videos: path.join(root, "videos"),
+    seo: path.join(root, "seo"),
     temp: path.join(root, ".temp"),
   };
 }

@@ -1,20 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Header } from "./components/Header";
-import { Tabs, type TabKey } from "./components/Tabs";
+import { Sidebar, type TabKey } from "./components/Sidebar";
+import { loadDraft, saveDraft } from "./lib/client/draftStore";
 import { ProductTypeSelector } from "./components/ProductTypeSelector";
 import { Dropzone } from "./components/Dropzone";
 import { ProductList } from "./components/ProductList";
-import {
-  ActionPanel,
-  type ActionKey,
-  type ActionStatus,
-} from "./components/ActionPanel";
+import { ProductionPanel, STEP_KEYS } from "./components/ProductionPanel";
+import { useQueue } from "./lib/client/useQueue";
 import { CompletedProductsView } from "./components/CompletedProductsView";
 import { TemplatesView } from "./components/TemplatesView";
 import { PricesView } from "./components/PricesView";
 import { MockupSelectionModal } from "./components/MockupSelectionModal";
+import { SeoContentModal } from "./components/SeoContentModal";
 import {
   MOCKUP_CATEGORIES,
   PRODUCT_TYPE_META,
@@ -38,6 +36,8 @@ import {
   openFolder,
   pickMockupFolder,
   publishToEtsy,
+  enqueueProducts,
+  type QueueStep,
   runExport,
   runMockup,
   runUpscaleRerun,
@@ -46,13 +46,28 @@ import {
   scanMockupFolder,
 } from "./lib/client/api";
 
-const INITIAL_STATUSES: Record<ActionKey, ActionStatus> = {
-  upscale: "idle",
-  export: "idle",
-  mockup: "idle",
-  video: "idle",
-  publish: "idle",
+const TAB_KEYS: TabKey[] = ["new", "completed", "templates", "prices"];
+
+const PAGE_HEADERS: Record<TabKey, { title: string; subtitle: string }> = {
+  new: {
+    title: "Yeni Ürün",
+    subtitle:
+      "Görselleri yükle, setleri oluştur ve tek akışta Etsy taslağına kadar götür.",
+  },
+  completed: {
+    title: "Tamamlanan Ürünler",
+    subtitle: "Üretilen ürünleri ara, adımları yeniden çalıştır ve Etsy'ye gönder.",
+  },
+  templates: {
+    title: "Mockup Şablonları",
+    subtitle: "PSD klasörlerini tara; tekli, 2'li ve 3'lü set şablonlarını yönet.",
+  },
+  prices: {
+    title: "Fiyatlar",
+    subtitle: "Set türüne göre boyut × seçenek fiyat matrisi.",
+  },
 };
+
 
 interface RunningState {
   workspaceId: string;
@@ -62,6 +77,13 @@ interface RunningState {
 
 export default function Home() {
   const [tab, setTab] = useState<TabKey>("new");
+  const selectTab = useCallback((next: TabKey) => {
+    setTab(next);
+    const url = new URL(window.location.href);
+    if (next === "new") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", next);
+    window.history.replaceState({}, "", url);
+  }, []);
 
   // Yeni Ürün sekmesi state'i
   const [productType, setProductType] = useState<ProductType>("single");
@@ -69,12 +91,6 @@ export default function Home() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [upscaledUrls, setUpscaledUrls] = useState<Record<string, string>>({});
-  const [actionStatuses, setActionStatuses] =
-    useState<Record<ActionKey, ActionStatus>>(INITIAL_STATUSES);
-  const [actionError, setActionError] = useState<{
-    action: ActionKey;
-    message: string;
-  } | null>(null);
 
   // Tamamlanan Ürünler sekmesi state'i
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
@@ -99,6 +115,7 @@ export default function Home() {
   // çağrılır, böylece handleRunAll Promise tabanlı olarak ilerler.
   const [fullAutomationSelection, setFullAutomationSelection] = useState<{
     product: ProductMeta;
+    subtitle: string;
     resolve: (templateIds: string[] | null) => void;
   } | null>(null);
   const [mockupRendering, setMockupRendering] = useState(false);
@@ -108,6 +125,11 @@ export default function Home() {
     name: string;
   } | null>(null);
   const [mockupError, setMockupError] = useState<string | null>(null);
+  const [seoModalTarget, setSeoModalTarget] = useState<{
+    workspaceId: string;
+    productId: string;
+  } | null>(null);
+
 
   const products = useMemo<Product[]>(() => {
     const perProduct = PRODUCT_TYPE_META[productType].imagesPerProduct;
@@ -284,6 +306,38 @@ export default function Home() {
     };
   }, [refreshWorkspaces, refreshTemplates]);
 
+  // Sekmeyi URL'den al ve Yeni Ürün taslağını IndexedDB'den geri yükle, ki
+  // sayfa yenilenince yüklenen görseller kaybolmasın.
+  const [draftHydrated, setDraftHydrated] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await Promise.resolve();
+      if (cancelled) return;
+      const fromUrl = new URLSearchParams(window.location.search).get("tab");
+      if (fromUrl && (TAB_KEYS as string[]).includes(fromUrl)) {
+        setTab(fromUrl as TabKey);
+      }
+      const draft = await loadDraft();
+      if (cancelled) return;
+      if (draft) {
+        setPool(draft.images);
+        setProductType(draft.meta.productType);
+        setWorkspaceId(draft.meta.workspaceId);
+        setUpscaledUrls(draft.meta.upscaledUrls ?? {});
+      }
+      setDraftHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!draftHydrated) return;
+    void saveDraft(pool, { productType, workspaceId, upscaledUrls });
+  }, [draftHydrated, pool, productType, workspaceId, upscaledUrls]);
+
   const handleFiles = useCallback(async (files: File[]) => {
     setIsProcessing(true);
     try {
@@ -350,218 +404,9 @@ export default function Home() {
   const handleClearAll = useCallback(() => {
     pool.forEach((img) => URL.revokeObjectURL(img.url));
     setPool([]);
-    setActionStatuses(INITIAL_STATUSES);
     setUpscaledUrls({});
     setWorkspaceId(null);
-    setActionError(null);
   }, [pool]);
-
-  const performExport = useCallback(
-    async (overrideWorkspaceId?: string): Promise<boolean> => {
-      const targetWs = overrideWorkspaceId ?? workspaceId;
-      if (!targetWs) {
-        setActionError({
-          action: "export",
-          message: "Önce Upscale çalıştırarak workspace oluştur.",
-        });
-        return false;
-      }
-      setActionError(null);
-      setActionStatuses((s) => ({ ...s, export: "running" }));
-      try {
-        await runExport(targetWs);
-        setActionStatuses((s) => ({ ...s, export: "done" }));
-        void refreshWorkspaces();
-        return true;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Bilinmeyen hata";
-        setActionStatuses((s) => ({ ...s, export: "error" }));
-        setActionError({ action: "export", message });
-        return false;
-      }
-    },
-    [workspaceId, refreshWorkspaces]
-  );
-
-  const performVideo = useCallback(
-    async (overrideWorkspaceId?: string): Promise<boolean> => {
-      const targetWs = overrideWorkspaceId ?? workspaceId;
-      if (!targetWs) {
-        setActionError({
-          action: "video",
-          message: "Önce Upscale çalıştırarak workspace oluştur.",
-        });
-        return false;
-      }
-      // For each product in the workspace, render its video. The action handles
-      // single-product workspaces; multi-product rendering happens sequentially.
-      const ws = workspaces.find((w) => w.meta.id === targetWs);
-      const productIds =
-        ws?.meta.products.map((p) => p.id) ??
-        completeProducts.map((p) => p.id);
-      if (productIds.length === 0) {
-        setActionError({ action: "video", message: "Ürün bulunamadı." });
-        return false;
-      }
-      setActionError(null);
-      setActionStatuses((s) => ({ ...s, video: "running" }));
-      try {
-        for (const pid of productIds) {
-          await runVideo(targetWs, pid);
-        }
-        setActionStatuses((s) => ({ ...s, video: "done" }));
-        void refreshWorkspaces();
-        return true;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Bilinmeyen hata";
-        setActionStatuses((s) => ({ ...s, video: "error" }));
-        setActionError({ action: "video", message });
-        return false;
-      }
-    },
-    [workspaceId, workspaces, completeProducts, refreshWorkspaces]
-  );
-
-  const performUpscale = useCallback(async (): Promise<string | null> => {
-    if (completeProducts.length === 0) return null;
-    setActionError(null);
-    setActionStatuses((s) => ({ ...s, upscale: "running" }));
-    try {
-      const result = await runUpscaleUpload(completeProducts, workspaceId);
-      setWorkspaceId(result.workspaceId);
-      setUpscaledUrls((prev) => {
-        const next = { ...prev };
-        for (const product of result.products) {
-          const local = completeProducts.find((p) => p.id === product.productId);
-          if (!local) continue;
-          for (const img of product.images) {
-            const localImg = local.images[img.index];
-            if (localImg) next[localImg.id] = img.upscaledUrl;
-          }
-        }
-        return next;
-      });
-      setActionStatuses((s) => ({ ...s, upscale: "done" }));
-      // Listeyi sessizce güncelle ki "Tamamlanan" sekmesinde gözüksün
-      void refreshWorkspaces();
-      return result.workspaceId;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Bilinmeyen hata";
-      setActionStatuses((s) => ({ ...s, upscale: "error" }));
-      setActionError({ action: "upscale", message });
-      return null;
-    }
-  }, [completeProducts, workspaceId, refreshWorkspaces]);
-
-  /**
-   * Runs mockup render for every product in the workspace using the given
-   * per-product template selection map.
-   */
-  const performMockupForAll = useCallback(
-    async (
-      targetWs: string,
-      selections: Map<string, string[]>
-    ): Promise<boolean> => {
-      setActionStatuses((s) => ({ ...s, mockup: "running" }));
-      try {
-        for (const [productId, templateIds] of selections) {
-          if (templateIds.length === 0) continue;
-          await runMockup(targetWs, productId, templateIds);
-        }
-        setActionStatuses((s) => ({ ...s, mockup: "done" }));
-        void refreshWorkspaces();
-        return true;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Bilinmeyen hata";
-        setActionStatuses((s) => ({ ...s, mockup: "error" }));
-        setActionError({ action: "mockup", message });
-        return false;
-      }
-    },
-    [refreshWorkspaces]
-  );
-
-  /**
-   * Publishes every product in the workspace to Etsy as a draft listing.
-   */
-  const performPublish = useCallback(
-    async (overrideWorkspaceId?: string): Promise<boolean> => {
-      const targetWs = overrideWorkspaceId ?? workspaceId;
-      if (!targetWs) {
-        setActionError({
-          action: "publish",
-          message: "Önce Upscale çalıştırarak workspace oluştur.",
-        });
-        return false;
-      }
-      const ws = workspaces.find((w) => w.meta.id === targetWs);
-      const productIds =
-        ws?.meta.products.map((p) => p.id) ??
-        completeProducts.map((p) => p.id);
-      if (productIds.length === 0) {
-        setActionError({ action: "publish", message: "Ürün bulunamadı." });
-        return false;
-      }
-      setActionError(null);
-      setActionStatuses((s) => ({ ...s, publish: "running" }));
-      let successCount = 0;
-      const errors: string[] = [];
-      try {
-        for (const pid of productIds) {
-          try {
-            await publishToEtsy(targetWs, pid);
-            successCount += 1;
-          } catch (err) {
-            const m = err instanceof Error ? err.message : String(err);
-            errors.push(`${pid.slice(-8)}: ${m}`);
-          }
-        }
-        if (errors.length > 0 && successCount === 0) {
-          setActionStatuses((s) => ({ ...s, publish: "error" }));
-          setActionError({ action: "publish", message: errors.join("\n") });
-          return false;
-        }
-        setActionStatuses((s) => ({ ...s, publish: "done" }));
-        if (errors.length > 0) {
-          setActionError({
-            action: "publish",
-            message: `${successCount} başarılı, ${errors.length} hata: ${errors.join("; ")}`,
-          });
-        }
-        return true;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Bilinmeyen hata";
-        setActionStatuses((s) => ({ ...s, publish: "error" }));
-        setActionError({ action: "publish", message });
-        return false;
-      }
-    },
-    [workspaceId, workspaces, completeProducts]
-  );
-
-  const handleRunAction = useCallback(
-    (action: ActionKey) => {
-      if (action === "upscale") {
-        void performUpscale();
-        return;
-      }
-      if (action === "export") {
-        void performExport();
-        return;
-      }
-      if (action === "video") {
-        void performVideo();
-        return;
-      }
-      if (action === "publish") {
-        void performPublish();
-        return;
-      }
-      // mockup requires template selection — handled in Tamamlanan tab
-      console.log("Run action (not implemented from new tab):", action);
-    },
-    [performUpscale, performExport, performVideo, performPublish]
-  );
 
   /**
    * Builds a placeholder ProductMeta object for the mockup-selection modal,
@@ -586,49 +431,136 @@ export default function Home() {
     []
   );
 
-  const handleRunAll = useCallback(async () => {
-    if (completeProducts.length === 0) return;
+  // ── Üretim kuyruğu ────────────────────────────────────────────────────
+  const [queueSteps, setQueueSteps] = useState<Set<QueueStep>>(
+    () => new Set(STEP_KEYS)
+  );
+  const [queueStarting, setQueueStarting] = useState(false);
+  const [queueStartError, setQueueStartError] = useState<string | null>(null);
+  const queue = useQueue(() => void refreshWorkspaces());
 
-    // Phase 1: Collect mockup template selections per product.
-    const selections = new Map<string, string[]>();
-    for (const product of completeProducts) {
-      const meta = buildPlaceholderProductMeta(product);
-      const ids = await new Promise<string[] | null>((resolve) => {
-        setFullAutomationSelection({ product: meta, resolve });
-      });
-      if (ids === null) return; // user cancelled
-      selections.set(product.id, ids);
+  // Ayarlar → AI İçerik Üretimi anahtarı; Yeni Ürün sekmesine her dönüşte tazelenir.
+  const [aiEnabled, setAiEnabled] = useState(true);
+  useEffect(() => {
+    if (tab !== "new") return;
+    let cancelled = false;
+    fetch("/api/settings", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        const raw = String(d?.settings?.AI_SEO_ENABLED ?? "").trim().toLowerCase();
+        setAiEnabled(raw !== "false");
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [tab]);
+
+  // Adım seçimi bu tarayıcıda hatırlansın.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await Promise.resolve();
+      if (cancelled) return;
+      try {
+        const raw = localStorage.getItem("queueSteps");
+        if (raw) {
+          const parsed = (JSON.parse(raw) as string[]).filter((s): s is QueueStep =>
+            (STEP_KEYS as string[]).includes(s)
+          );
+          setQueueSteps(new Set(parsed));
+        }
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const toggleQueueStep = useCallback((step: QueueStep) => {
+    setQueueSteps((prev) => {
+      const next = new Set(prev);
+      if (next.has(step)) next.delete(step);
+      else next.add(step);
+      try {
+        localStorage.setItem("queueSteps", JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  /**
+   * Tüm hazır ürünleri kuyruğa ekler:
+   *  1. Mockup adımı seçiliyse, her grup (tekli dikey / tekli yatay / 2'li /
+   *     3'lü …) için şablonlar BİR KEZ seçilir ve gruptaki her ürüne uygulanır.
+   *  2. Dosyalar sunucuya kaydedilir (upscale'i kuyruk yapacak).
+   *  3. Ürünler sırayla işlenmek üzere kuyruğa eklenir ve taslaktan çıkarılır.
+   */
+  const handleStartQueue = useCallback(async () => {
+    const batch = completeProducts;
+    if (batch.length === 0 || queueSteps.size === 0) return;
+    setQueueStartError(null);
+
+    const groupKey = (p: Product) =>
+      p.type === "single" ? `single-${p.images[0].orientation}` : p.type;
+    const templatesByGroup = new Map<string, string[]>();
+    if (queueSteps.has("mockup")) {
+      const groups = new Map<string, Product[]>();
+      for (const p of batch) {
+        const k = groupKey(p);
+        groups.set(k, [...(groups.get(k) ?? []), p]);
+      }
+      for (const [key, members] of groups) {
+        const ids = await new Promise<string[] | null>((resolve) => {
+          setFullAutomationSelection({
+            product: buildPlaceholderProductMeta(members[0]),
+            subtitle: `Bu seçim ${members.length} ürüne uygulanacak`,
+            resolve,
+          });
+        });
+        if (ids === null) return; // vazgeçildi
+        templatesByGroup.set(key, ids);
+      }
     }
 
-    // Phase 2: Upscale (creates workspace + uploads files)
-    const wsId = await performUpscale();
-    if (!wsId) return;
-
-    // Phase 3: Export (all products in workspace)
-    const exportOk = await performExport(wsId);
-    if (!exportOk) return;
-
-    // Phase 4: Mockup render with selected templates per product
-    await performMockupForAll(wsId, selections);
-
-    // Phase 5: Video for every product
-    await performVideo(wsId);
-
-    // Phase 6: Publish each product to Etsy
-    await performPublish(wsId);
-  }, [
-    completeProducts,
-    buildPlaceholderProductMeta,
-    performUpscale,
-    performExport,
-    performMockupForAll,
-    performVideo,
-    performPublish,
-  ]);
+    setQueueStarting(true);
+    try {
+      const staged = await runUpscaleUpload(batch, null, { stageOnly: true });
+      await enqueueProducts({
+        workspaceId: staged.workspaceId,
+        steps: STEP_KEYS.filter(
+          (s) => queueSteps.has(s) && (s !== "seo" || aiEnabled)
+        ),
+        products: batch.map((p) => ({
+          productId: p.id,
+          templateIds: templatesByGroup.get(groupKey(p)) ?? [],
+        })),
+      });
+      // Kuyruğa giren görselleri taslaktan çıkar (eksik set varsa kalır).
+      const queuedIds = new Set(batch.flatMap((p) => p.images.map((i) => i.id)));
+      setPool((prev) => {
+        prev.filter((i) => queuedIds.has(i.id)).forEach((i) => URL.revokeObjectURL(i.url));
+        return prev.filter((i) => !queuedIds.has(i.id));
+      });
+      setUpscaledUrls({});
+      setWorkspaceId(null);
+      await Promise.all([queue.refresh(), refreshWorkspaces()]);
+    } catch (err) {
+      setQueueStartError(err instanceof Error ? err.message : "Kuyruğa eklenemedi");
+    } finally {
+      setQueueStarting(false);
+    }
+  }, [completeProducts, queueSteps, aiEnabled, buildPlaceholderProductMeta, queue, refreshWorkspaces]);
 
   const handleRerunStep = useCallback(
     async (wsId: string, productId: string, step: ActionStepKey) => {
       if (running) return;
+      // SEO adımı içerik modalını açar (görüntüle / düzenle / üret)
+      if (step === "seo") {
+        setSeoModalTarget({ workspaceId: wsId, productId });
+        return;
+      }
       // Mockup adımı modal açar (kullanıcı şablon seçer)
       if (step === "mockup") {
         const ws = workspaces.find((w) => w.meta.id === wsId);
@@ -763,59 +695,93 @@ export default function Home() {
     [publishingProduct]
   );
 
-  const ready = completeProducts.length > 0;
-
   return (
-    <div className="min-h-screen">
-      <Header />
-      <Tabs
+    <div className="min-h-screen lg:pl-64">
+      <Sidebar
         active={tab}
-        completedCount={totalCompletedProducts}
-        templateCount={totalTemplates}
-        onChange={setTab}
+        onSelect={selectTab}
+        badges={{
+          completed: totalCompletedProducts,
+          templates: totalTemplates,
+        }}
       />
 
-      <main className="max-w-5xl mx-auto px-6 pb-24 pt-8">
+      <main className="mx-auto max-w-6xl px-5 sm:px-8 pb-24 pt-8 lg:pt-12">
+        <header className="mb-8">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-600">
+            Poster Studio
+          </div>
+          <h1 className="mt-1.5 text-[28px] leading-tight font-semibold tracking-tight text-brand-900">
+            {PAGE_HEADERS[tab].title}
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {PAGE_HEADERS[tab].subtitle}
+          </p>
+        </header>
+
         {tab === "new" && (
-          <>
-            <ProductTypeSelector
-              value={productType}
-              onChange={setProductType}
-            />
-            <Dropzone productType={productType} onFiles={handleFiles} />
+          <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
+            <div className="min-w-0 space-y-8">
+              <StepSection
+                number="01"
+                title="Ürün türü"
+                description="Her ürün kaç görselden oluşacak?"
+              >
+                <ProductTypeSelector value={productType} onChange={setProductType} />
+              </StepSection>
 
-            {isProcessing && (
-              <div className="mt-3 text-xs text-slate-500 text-center">
-                Görseller işleniyor…
-              </div>
-            )}
+              <StepSection
+                number="02"
+                title="Görselleri yükle"
+                description={
+                  productType === "single"
+                    ? "Her görsel ayrı bir ürün olur."
+                    : "Görseller yükleme sırasıyla setlere ayrılır: ilk görsel sol, sonraki orta / sağ çerçeveye gider."
+                }
+              >
+                <Dropzone productType={productType} onFiles={handleFiles} />
+                {isProcessing && (
+                  <div className="mt-3 text-xs text-slate-500 text-center">
+                    Görseller işleniyor…
+                  </div>
+                )}
+              </StepSection>
 
-            <ProductList
-              products={products}
-              incompleteCount={incompleteCount}
-              upscaledUrls={upscaledUrls}
-              onRemoveProduct={handleRemoveProduct}
-              onReorderImages={handleReorderImages}
-              onClearAll={handleClearAll}
-            />
+              <StepSection
+                number="03"
+                title="Kontrol et"
+                description="Setlerde görselleri sürükleyerek sol → sağ sırasını değiştirebilirsin."
+              >
+                <ProductList
+                  products={products}
+                  incompleteCount={incompleteCount}
+                  upscaledUrls={upscaledUrls}
+                  onRemoveProduct={handleRemoveProduct}
+                  onReorderImages={handleReorderImages}
+                  onClearAll={handleClearAll}
+                />
+              </StepSection>
+            </div>
 
-            <ActionPanel
-              ready={ready}
-              productCount={completeProducts.length}
-              statuses={actionStatuses}
-              onRun={handleRunAction}
-              onRunAll={handleRunAll}
-            />
-
-            {actionError && (
-              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-                <div className="font-semibold capitalize">
-                  {actionError.action} hatası
-                </div>
-                <div className="text-red-700 mt-0.5">{actionError.message}</div>
-              </div>
-            )}
-          </>
+            <aside className="xl:sticky xl:top-8">
+              <ProductionPanel
+                aiEnabled={aiEnabled}
+                readyCount={completeProducts.length}
+                incompleteCount={incompleteCount}
+                steps={queueSteps}
+                onToggleStep={toggleQueueStep}
+                onStart={() => void handleStartQueue()}
+                starting={queueStarting}
+                startError={queueStartError}
+                queue={queue.snapshot}
+                queueError={queue.error}
+                onCancel={(id) => void queue.act("cancel", id)}
+                onRetry={(id) => void queue.act("retry", id)}
+                onClearFinished={() => void queue.act("clear")}
+                onOpenCompleted={() => selectTab("completed")}
+              />
+            </aside>
+          </div>
         )}
 
         {tab === "completed" && (
@@ -863,10 +829,21 @@ export default function Home() {
         />
       )}
 
+      {seoModalTarget && (
+        <SeoContentModal
+          workspaceId={seoModalTarget.workspaceId}
+          productId={seoModalTarget.productId}
+          onClose={() => setSeoModalTarget(null)}
+          onChanged={() => void refreshWorkspaces()}
+        />
+      )}
+
       {/* Full Otomasyon — mockup seçim modal'ı (Promise tabanlı) */}
       {fullAutomationSelection && (
         <MockupSelectionModal
           product={fullAutomationSelection.product}
+          subtitle={fullAutomationSelection.subtitle}
+          confirmLabel="Seç ve devam et"
           templatesIndex={templatesIndex}
           rendering={false}
           renderProgress={null}
@@ -882,5 +859,30 @@ export default function Home() {
         />
       )}
     </div>
+  );
+}
+
+function StepSection({
+  number,
+  title,
+  description,
+  children,
+}: {
+  number: string;
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <div className="mb-3 flex items-baseline gap-3">
+        <span className="font-mono text-[12px] font-semibold text-gold-600">{number}</span>
+        <div>
+          <h2 className="text-[15px] font-semibold text-brand-900">{title}</h2>
+          <p className="text-[12.5px] text-slate-500">{description}</p>
+        </div>
+      </div>
+      {children}
+    </section>
   );
 }

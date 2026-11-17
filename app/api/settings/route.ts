@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   isSettableKey,
+  readSecretStatus,
   readSettings,
   writeSettings,
   type SettableKey,
@@ -9,7 +10,10 @@ import {
 export const runtime = "nodejs";
 
 export async function GET() {
-  return NextResponse.json({ settings: readSettings() });
+  return NextResponse.json({
+    settings: readSettings(),
+    secrets: readSecretStatus(),
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -39,7 +43,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const settings = await writeSettings(updates);
-    return NextResponse.json({ settings, rejected });
+    return NextResponse.json({
+      settings,
+      secrets: readSecretStatus(),
+      rejected,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Ayar kaydedilemedi";
     return NextResponse.json({ error: message }, { status: 500 });

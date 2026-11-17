@@ -45,6 +45,8 @@ interface NewUploadPayload {
   mode: "upload";
   workspaceId?: string | null;
   products: NewUploadProductInput[];
+  /** Save originals + meta only; the production queue runs upscale later. */
+  stageOnly?: boolean;
 }
 
 interface RerunPayload {
@@ -103,6 +105,8 @@ async function handleUpload(payload: NewUploadPayload, form: FormData) {
   for (const product of payload.products) {
     const dirs = await ensureProductDirs(workspaceId, product.productId);
     await resetProductSubdir(workspaceId, product.productId, "original");
+    // New images → any earlier SEO copy describes the old artwork.
+    await resetProductSubdir(workspaceId, product.productId, "seo");
 
     const imageInputs: UpscaleProductInput["images"] = [];
     const imageMetas: ImageMeta[] = [];
@@ -165,6 +169,10 @@ async function handleUpload(payload: NewUploadPayload, form: FormData) {
     products: mergedProducts,
   };
   await writeWorkspaceMeta(workspaceMeta);
+
+  if (payload.stageOnly) {
+    return NextResponse.json({ workspaceId, products: [] });
+  }
 
   const results = await upscaleWorkspace(workspaceId, productInputs);
   return NextResponse.json({ workspaceId, products: results });

@@ -6,7 +6,7 @@ import {
   workspaceDir,
   workspaceRoot,
 } from "./paths";
-import type { WorkspaceMeta } from "../types";
+import type { ProductMeta, WorkspaceMeta } from "../types";
 
 const META_FILENAME = "meta.json";
 
@@ -27,6 +27,7 @@ export async function ensureProductDirs(
     fs.mkdir(dirs.exports, { recursive: true }),
     fs.mkdir(dirs.mockups, { recursive: true }),
     fs.mkdir(dirs.videos, { recursive: true }),
+    fs.mkdir(dirs.seo, { recursive: true }),
     fs.mkdir(dirs.temp, { recursive: true }),
   ]);
   return dirs;
@@ -61,6 +62,40 @@ export async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
+/**
+ * Resolves each product image to the best available source on disk, in the
+ * product's image order (= upload order, which is also the left→right order
+ * for sets): upscaled JPG if present, else the original upload.
+ */
+export async function resolveProductImagePaths(
+  workspaceId: string,
+  product: ProductMeta
+): Promise<string[]> {
+  const dirs = productSubdirs(workspaceId, product.id);
+  const out: string[] = [];
+  for (const img of product.images) {
+    const idxLabel = String(img.index + 1).padStart(2, "0");
+    const baseNoExt = img.filename.replace(/\.[^.]+$/, "");
+    const candidates = [
+      path.join(dirs.upscaled, `${idxLabel}-${baseNoExt}.jpg`),
+      path.join(dirs.upscaled, `${baseNoExt}.jpg`),
+      path.join(dirs.original, img.filename),
+    ];
+    let resolved: string | null = null;
+    for (const c of candidates) {
+      if (await fileExists(c)) {
+        resolved = c;
+        break;
+      }
+    }
+    if (!resolved) {
+      throw new Error(`Görsel bulunamadı: ${product.id} / ${img.filename}`);
+    }
+    out.push(resolved);
+  }
+  return out;
+}
+
 export function safeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
@@ -86,6 +121,20 @@ export async function writeWorkspaceMeta(meta: WorkspaceMeta): Promise<void> {
   const now = new Date().toISOString();
   const next: WorkspaceMeta = { ...meta, updatedAt: now };
   await fs.writeFile(metaPath(meta.id), JSON.stringify(next, null, 2), "utf8");
+}
+
+/** Stores the SEO title on the product record (used for search in the UI). */
+export async function setProductTitle(
+  workspaceId: string,
+  productId: string,
+  title: string
+): Promise<void> {
+  const meta = await readWorkspaceMeta(workspaceId);
+  if (!meta) return;
+  const product = meta.products.find((p) => p.id === productId);
+  if (!product || product.title === title) return;
+  product.title = title;
+  await writeWorkspaceMeta(meta);
 }
 
 export async function listWorkspaceIds(): Promise<string[]> {
